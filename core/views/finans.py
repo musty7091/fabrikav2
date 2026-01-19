@@ -232,54 +232,80 @@ def hakedis_ekle(request, siparis_id):
         messages.warning(request, "Malzeme siparişleri için Hakediş değil, Fatura girmelisiniz.")
         return redirect('fatura_girisi', siparis_id=siparis.id)
 
-    # Mevcut ilerlemeyi sipariş ID üzerinden çekiyoruz (Obje hatasını önler)
-    mevcut_toplam_ilerleme = Hakedis.objects.filter(satinalma_id=siparis_id).aggregate(s=Sum('tamamlanma_orani'))['s'] or Decimal('0.00')
+    mevcut_toplam_ilerleme = (
+        Hakedis.objects
+        .filter(satinalma_id=siparis_id)
+        .aggregate(s=Sum('tamamlanma_orani'))['s']
+        or Decimal('0.00')
+    )
+
+    # ✅ KALAN KAPASİTEYİ DOĞRU HESAPLA (100 - mevcut)
+    kalan_kapasite = (Decimal('100.00') - to_decimal(mevcut_toplam_ilerleme)).quantize(
+        Decimal('0.01'), rounding=ROUND_HALF_UP
+    )
+    if kalan_kapasite < 0:
+        kalan_kapasite = Decimal('0.00')
 
     if request.method == 'POST':
         form = HakedisForm(request.POST)
         if form.is_valid():
             hakedis = form.save(commit=False)
-            
-            # KRİTİK DÜZELTME: Önce ilişkiyi manuel ata
-            hakedis.satinalma = siparis 
-            
-            # %100 Kontrolü
-            yeni_oran = to_decimal(hakedis.tamamlanma_orani)
-            if (mevcut_toplam_ilerleme + yeni_oran) > Decimal('100.00'):
-                kalan = Decimal('100.00') - mevcut_toplam_ilerleme
-                messages.error(request, f"⛔ Hata: Toplam ilerleme %100'ü geçemez! Kalan kapasite: %{kalan}")
-                return render(request, 'hakedis_ekle.html', {'form': form, 'siparis': siparis, 'mevcut_toplam': mevcut_toplam_ilerleme})
+            hakedis.satinalma = siparis  # ✅ ilişkiyi önce ata
 
-            # KDV ve diğer otomatik atamalar
+            yeni_oran = to_decimal(hakedis.tamamlanma_orani)
+
+            # ✅ %100 kontrol
+            if (to_decimal(mevcut_toplam_ilerleme) + yeni_oran) > Decimal('100.00'):
+                kalan = (Decimal('100.00') - to_decimal(mevcut_toplam_ilerleme)).quantize(
+                    Decimal('0.01'), rounding=ROUND_HALF_UP
+                )
+                if kalan < 0:
+                    kalan = Decimal('0.00')
+                messages.error(request, f"⛔ Hata: Toplam ilerleme %100'ü geçemez! Kalan kapasite: %{kalan}")
+                return render(request, 'hakedis_ekle.html', {
+                    'form': form,
+                    'siparis': siparis,
+                    'mevcut_toplam': mevcut_toplam_ilerleme,
+                    'kalan_kapasite': kalan,
+                })
+
             hakedis.kdv_orani = siparis.teklif.kdv_orani
             hakedis.onay_durumu = True
-            
+
             try:
-                # Modeli kaydet (Modeldeki save() metodu artık satinalma'yı bulabilir)
-                hakedis.save() 
-                
-                # Sipariş ilerlemesini güncelle
+                hakedis.save()
+
                 toplam_is = to_decimal(siparis.toplam_miktar)
                 yapilan_miktar = (toplam_is * yeni_oran) / Decimal('100.00')
-                
+
                 siparis.teslim_edilen = to_decimal(siparis.teslim_edilen) + yapilan_miktar
                 siparis.faturalanan_miktar = to_decimal(siparis.faturalanan_miktar) + yapilan_miktar
                 siparis.save()
-                
+
                 messages.success(request, f"✅ %{yeni_oran} oranındaki hakediş onaylandı.")
                 return redirect('siparis_listesi')
-                
+
             except Exception as e:
                 messages.error(request, f"Hesaplama hatası oluştu: {str(e)}")
-                return render(request, 'hakedis_ekle.html', {'form': form, 'siparis': siparis})
+                return render(request, 'hakedis_ekle.html', {
+                    'form': form,
+                    'siparis': siparis,
+                    'mevcut_toplam': mevcut_toplam_ilerleme,
+                    'kalan_kapasite': kalan_kapasite,
+                })
     else:
         form = HakedisForm(initial={
-            'tarih': timezone.now().date(), 
+            'tarih': timezone.now().date(),
             'hakedis_no': Hakedis.objects.filter(satinalma=siparis).count() + 1,
             'kdv_orani': siparis.teklif.kdv_orani
         })
-    
-    return render(request, 'hakedis_ekle.html', {'form': form, 'siparis': siparis, 'mevcut_toplam': mevcut_toplam_ilerleme})
+
+    return render(request, 'hakedis_ekle.html', {
+        'form': form,
+        'siparis': siparis,
+        'mevcut_toplam': mevcut_toplam_ilerleme,
+        'kalan_kapasite': kalan_kapasite,
+    })
 
 @login_required
 def odeme_yap(request):

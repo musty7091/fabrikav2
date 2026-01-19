@@ -99,12 +99,11 @@ def mal_kabul(request):
 @login_required
 def fatura_girisi(request, siparis_id=None):
     """
-    DOĞRU AKIŞ (tek kaynak):
-    - Sipariş zorunlu.
-    - Tutar kullanıcıdan gelmez; server hesaplar.
-    - Depo: sanal depo (vendor location) kilit.
-    - Finansal update + stok hareketi işlemleri Fatura.save() içinde zaten var.
-      Bu yüzden view'de tekrar update/create YAPMIYORUZ.
+    FINAL:
+    - URL hangi view'i çağırıyor karışmasın diye __init__.py'de satin_alma override yaptık.
+    - Depo: Sanal depo (VENDOR) otomatik kilitlenir.
+    - Tutar: Kullanıcı girebilir. Boş bırakırsa form hesaplar.
+    - Finansal/stok update: Fatura.save() içinde (model) zaten var. Burada tekrar yok.
     """
     if not yetki_kontrol(request.user, ['OFIS_VE_SATINALMA', 'MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
@@ -121,62 +120,32 @@ def fatura_girisi(request, siparis_id=None):
         messages.error(request, "Sanal depo bulunamadı. Lütfen önce sanal depo tanımlayın.")
         return redirect('siparis_listesi')
 
-    teklif = secili_siparis.teklif
-    kalan = secili_siparis.kalan_fatura_miktar
-
-    if request.method == 'POST':
-        # ✅ KRİTİK: satinalma bağlamını MUTLAKA geçir!
+    if request.method == "POST":
         form = FaturaGirisForm(request.POST, request.FILES, satinalma=secili_siparis)
 
         if form.is_valid():
             fatura = form.save(commit=False)
 
-            # ✅ Satınalma bağla (model save bunu bekliyor)
+            # ✅ zorunlu bağlar
             fatura.satinalma = secili_siparis
+            fatura.depo = sanal_depo  # sanal depoya kilitle
 
-            # ✅ Depo kilitle (sanal)
-            fatura.depo = sanal_depo
-
-            # ✅ miktar kontrol (0 / negatif / kalan aşımı)
-            miktar = _to_dec(fatura.miktar, "0")
-            if miktar <= 0:
-                messages.error(request, "Fatura miktarı 0'dan büyük olmalıdır.")
-                return render(request, 'fatura_girisi.html', {
-                    'form': form,
-                    'secili_siparis': secili_siparis,
-                    'sanal_depo': sanal_depo
-                })
-
-            if _to_dec(kalan, "0") > 0 and miktar > _to_dec(kalan, "0"):
-                messages.error(request, f"Hata: Bu siparişte kalan fatura miktarı {kalan}. Daha fazla fatura giremezsiniz.")
-                return render(request, 'fatura_girisi.html', {
-                    'form': form,
-                    'secili_siparis': secili_siparis,
-                    'sanal_depo': sanal_depo
-                })
-
-            # ✅ Kaydet (Fatura.save() içinde stok + finans güncellemeleri var)
+            # form.save() instance.tutar'ı ayarladı (girilen ya da hesaplanan)
             fatura.save()
 
             messages.success(request, f"✅ Fatura kaydedildi. No: {fatura.fatura_no} | Miktar: {fatura.miktar} | Tutar: {fatura.tutar}")
             return redirect('siparis_detay', siparis_id=secili_siparis.id)
 
-        messages.error(request, "Form hatalı. Lütfen alanları kontrol edin.")
-        return render(request, 'fatura_girisi.html', {
-            'form': form,
-            'secili_siparis': secili_siparis,
-            'sanal_depo': sanal_depo
-        })
+        # Hataları kullanıcıya göster
+        messages.error(request, "Form kaydedilemedi:\n" + form.errors.as_text())
 
     # GET
+    kalan = secili_siparis.kalan_fatura_miktar
     initial_data = {
-        'depo': sanal_depo.id,
-        'miktar': kalan,
-        'tutar': _hesapla_fatura_tutari(teklif, kalan),
         'tarih': timezone.now().date(),
+        'miktar': kalan,
+        'depo': sanal_depo.id,  # template hidden input bunu basıyor
     }
-
-    # ✅ KRİTİK: GET'te de satinalma geçir (initial tutar hesap için)
     form = FaturaGirisForm(initial=initial_data, satinalma=secili_siparis)
 
     return render(request, 'fatura_girisi.html', {

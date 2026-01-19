@@ -5,4 +5,4 @@ from .satin_alma import *
 from .finans import *
 from .stok_depo import *
 from .tanimlar import *
-
+from .satin_alma import fatura_girisi as fatura_girisi

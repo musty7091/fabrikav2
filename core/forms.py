@@ -1,5 +1,5 @@
 from django import forms
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .models import (
     DepoTransfer, Depo, Teklif, Malzeme,
@@ -254,15 +254,21 @@ class IsKalemiForm(forms.ModelForm):
 # ========================================================
 
 class FaturaGirisForm(forms.ModelForm):
+    """
+    - tutar GİRİLEBİLİR (enabled)
+    - ekranda hesaplanmış initial gösterir
+    - kullanıcı boş bırakırsa server hesaplar
+    """
     class Meta:
         model = Fatura
         fields = ['fatura_no', 'tarih', 'depo', 'miktar', 'tutar', 'dosya']
         widgets = {
             'fatura_no': forms.TextInput(attrs={'class': 'form-control'}),
-            'tarih': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'tarih': forms.DateInput(attrs={'class': 'form-controlqs', 'type': 'date'}),  # istersen class'ı form-control yap
             'depo': forms.Select(attrs={'class': 'form-select'}),
             'miktar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'tutar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'readonly': True}),
+            # ✅ readonly/disabled YOK
+            'tutar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
             'dosya': forms.FileInput(attrs={'class': 'form-control'}),
         }
 
@@ -270,41 +276,51 @@ class FaturaGirisForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self._satinalma = satinalma
 
-        # kullanıcı yazmasın (disabled => POST'a gelmez)
-        self.fields['tutar'].disabled = False
+        # Depo ekranda “otomatik” gösteriliyorsa bile POST’a gitsin diye hidden render ediyorsun.
+        # Bu yüzden burada required'ı kapatıp view'de sanal depo kilitleyeceğiz.
+        self.fields['depo'].required = False
+
+        # Tutar normalde zorunlu, ama kullanıcı boş bırakırsa hesaplayacağımız için required False yapıyoruz.
         self.fields['tutar'].required = False
 
-        # ekranda gösterim amaçlı initial hesapla
+        # Initial tutar (gösterim amaçlı)
         if self._satinalma:
-            miktar = self.data.get("miktar") or self.initial.get("miktar") or 0
-            self.fields["tutar"].initial = self._hesapla_tutar(miktar)
+            miktar_val = self.data.get("miktar") or self.initial.get("miktar") or 0
+            self.initial['tutar'] = self._hesapla_tutar(miktar_val)
 
     def _hesapla_tutar(self, miktar):
         teklif = self._satinalma.teklif
 
-        miktar = to_decimal(miktar or 0)
-        birim_fiyat = to_decimal(getattr(teklif, "birim_fiyat", None) or 0)
-        kur = to_decimal(getattr(teklif, "kur_degeri", None) or 1)
+        miktar = to_decimal(miktar, "0")
+        birim = to_decimal(getattr(teklif, "birim_fiyat", None), "0")
+        kur = to_decimal(getattr(teklif, "kur_degeri", None), "1")
 
-        tutar = birim_fiyat * miktar * kur
+        kdv_orani = to_decimal(getattr(teklif, "kdv_orani", None), "0")
+        kdv_carpan = Decimal("1") + (kdv_orani / Decimal("100"))
 
-        if not getattr(teklif, "kdv_dahil_mi", False):
-            kdv_orani = to_decimal(getattr(teklif, "kdv_orani", None) or 0)
-            tutar = tutar * (Decimal("1") + (kdv_orani / Decimal("100")))
+        # teklif.kdv_dahil_mi True ise birim zaten kdvli kabul
+        birim_kdvli = birim if getattr(teklif, "kdv_dahil_mi", False) else (birim * kdv_carpan)
 
-        return tutar.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return (birim_kdvli * miktar * kur).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def clean_tutar(self):
+        val = self.cleaned_data.get("tutar")
+        if val in (None, ""):
+            return None
+        return to_decimal(val, "0").quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     def save(self, commit=True):
-        """
-        KRİTİK: tutar field'i disabled => POST'ta yok.
-        O yüzden her durumda burada hesaplayıp instance.tutar'a yazıyoruz.
-        """
         instance = super().save(commit=False)
 
         if not self._satinalma:
             raise forms.ValidationError("Satınalma bağlamı olmadan fatura kaydedilemez.")
 
-        instance.tutar = self._hesapla_tutar(instance.miktar)
+        # ✅ kullanıcı tutar girdiyse onu kullan, boşsa hesapla
+        girilen = self.cleaned_data.get("tutar", None)
+        if girilen is None:
+            instance.tutar = self._hesapla_tutar(instance.miktar)
+        else:
+            instance.tutar = girilen
 
         if commit:
             instance.save()
