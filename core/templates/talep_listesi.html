@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-clipboard-list text-primary"></i> Talep Yönetimi</h2>
+        <a href="{% url 'talep_olustur' %}" class="btn btn-primary shadow-sm">
+            <i class="fas fa-plus"></i> Yeni Talep
+        </a>
+    </div>
+
+    <div class="btn-group mb-3 shadow-sm">
+        <a href="{% url 'talep_listesi' %}" class="btn btn-outline-secondary {% if not request.GET.durum %}active{% endif %}">Tümü</a>
+        <a href="?durum=bekliyor" class="btn btn-outline-warning text-dark {% if request.GET.durum == 'bekliyor' %}active{% endif %}">⏳ Bekleyenler</a>
+        <a href="?durum=islemde" class="btn btn-outline-primary {% if request.GET.durum == 'islemde' %}active{% endif %}">⚙️ İşlemdekiler</a>
+        <a href="?durum=tamamlandi" class="btn btn-outline-success {% if request.GET.durum == 'tamamlandi' %}active{% endif %}">✅ Tamamlananlar</a>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Tarih</th>
+                            <th>Talep Eden</th>
+                            <th>Malzeme</th>
+                            <th>Miktar</th>
+                            <th>Proje Yeri</th>
+                            <th>Durum</th>
+                            <th class="text-end">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for talep in talepler %}
+                        <tr>
+                            <td>{{ talep.tarih|date:"d.m.Y" }} <br> <small class="text-muted">{{ talep.tarih|time:"H:i" }}</small></td>
+                            <td>
+                                <div class="fw-bold">{{ talep.talep_eden.username|upper }}</div>
+                            </td>
+                            <td>
+                                <span class="fw-bold text-primary">{{ talep.malzeme.isim }}</span>
+                                {% if talep.aciklama %}
+                                    <i class="fas fa-info-circle text-muted ms-1" data-bs-toggle="tooltip" title="{{ talep.aciklama }}"></i>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark border font-monospace fs-6">
+                                    {{ talep.miktar }} {{ talep.malzeme.get_birim_display }}
+                                </span>
+                            </td>
+                            <td>{{ talep.proje_yeri|default:"-" }}</td>
+                            <td>
+                                {% if talep.durum == 'bekliyor' %}
+                                    <span class="badge bg-warning text-dark">⏳ Onay Bekliyor</span>
+                                {% elif talep.durum == 'islemde' %}
+                                    <span class="badge bg-primary">⚙️ Satınalmada</span>
+                                {% elif talep.durum == 'tamamlandi' %}
+                                    <span class="badge bg-success">✅ Tamamlandı</span>
+                                {% elif talep.durum == 'red' %}
+                                    <span class="badge bg-danger">❌ Reddedildi</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if talep.durum == 'bekliyor' %}
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{% url 'talep_durum' talep.id 'islemde' %}" class="btn btn-success" title="Onayla">
+                                            <i class="fas fa-check"></i>
+                                        </a>
+                                        <a href="{% url 'talep_durum' talep.id 'red' %}" class="btn btn-danger" onclick="return confirm('Bu talebi reddetmek istediğinize emin misiniz?')" title="Reddet">
+                                            <i class="fas fa-times"></i>
+                                        </a>
+                                    </div>
+                                {% elif talep.durum == 'islemde' %}
+                                    <a href="{% url 'teklif_yonetimi' talep.id %}" class="btn btn-sm btn-warning shadow-sm">
+                                        <i class="fas fa-tags"></i> Fiyatları Gör
+                                    </a>
+                                {% else %}
+                                    <span class="text-muted small">-</span>
+                                {% endif %}
+                                
+                                {% if talep.durum == 'bekliyor' %}
+                                <a href="{% url 'talep_sil' talep.id %}" class="btn btn-sm btn-link text-muted" onclick="return confirm('Silinsin mi?')">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5 text-muted">
+                                <i class="fas fa-inbox fs-1 mb-3"></i><br>
+                                Henüz talep bulunmuyor.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Tooltipleri aktifleştir (Açıklamalar için)
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl)
+    })
+</script>
+{% endblock %}

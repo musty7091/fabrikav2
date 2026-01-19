@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+
+{% block title %}Depo ve Lojistik Yönetimi{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1500px;">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-truck-loading me-2 text-warning"></i> DEPO & TALEP YÖNETİMİ</h2>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">← Ana Menü</a>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-primary border-2 shadow-sm">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold"><i class="fas fa-bullhorn me-2"></i> Bekleyen Malzeme Talepleri ({{ bekleyen_talep_sayisi }})</h5>
+                    <a href="/admin/core/malzemetalep/add/" class="btn btn-sm btn-light text-primary fw-bold">
+                        <i class="fas fa-plus"></i> Yeni Talep
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Aciliyet</th>
+                                <th>Malzeme</th>
+                                <th>Miktar</th>
+                                <th>Durum</th>
+                                <th>İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for talep in bekleyen_talepler %}
+                            <tr>
+                                <td>
+                                    {% if talep.oncelik == 'cok_acil' %}<span class="badge bg-danger">🔥 ÇOK ACİL</span>
+                                    {% elif talep.oncelik == 'acil' %}<span class="badge bg-warning text-dark">🔴 Acil</span>
+                                    {% else %}<span class="badge bg-secondary">Normal</span>{% endif %}
+                                </td>
+                                <td class="fw-bold">{{ talep.malzeme.isim }}</td>
+                                <td>{{ talep.miktar }} {{ talep.malzeme.get_birim_display }}</td>
+                                <td><span class="badge bg-info text-dark">Onay Bekliyor</span></td>
+                                <td>
+                                    <a href="/admin/core/malzemetalep/{{ talep.id }}/change/" class="btn btn-sm btn-outline-primary">İncele</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5" class="text-center py-3 text-muted">Bekleyen talep yok.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h4 class="mb-3 text-secondary"><i class="fas fa-cubes me-2"></i> Malzeme Stok Kartları</h4>
+    <div class="row">
+        {% for mal in depo_ozeti %}
+        <div class="col-md-3 mb-3">
+            <div class="card h-100 border-{{ mal.durum_renk }} border-2">
+                <div class="card-body text-center">
+                    <h6 class="text-muted text-uppercase small fw-bold">{{ mal.isim }}</h6>
+                    <h2 class="display-6 fw-bold my-2 text-dark">{{ mal.stok|floatformat:0 }} <small class="fs-6">{{ mal.birim }}</small></h2>
+                    
+                    <div class="d-flex justify-content-between px-3 small text-muted border-top pt-2 mt-2">
+                        <span title="Giren"><i class="fas fa-arrow-down text-success"></i> {{ mal.giren|floatformat:0 }}</span>
+                        <span title="Çıkan"><i class="fas fa-arrow-up text-danger"></i> {{ mal.cikan|floatformat:0 }}</span>
+                    </div>
+
+                    {% if mal.durum_renk == 'danger' %}
+                        <div class="badge bg-danger mt-2 w-100">KRİTİK SEVİYE</div>
+                    {% elif mal.durum_renk == 'warning' %}
+                        <div class="badge bg-warning text-dark mt-2 w-100">AZALIYOR</div>
+                    {% else %}
+                        <div class="badge bg-success mt-2 w-100">STOK YETERLİ</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="d-grid gap-2 mt-4">
+        <a href="/admin/core/depohareket/add/" class="btn btn-warning btn-lg fw-bold"><i class="fas fa-dolly me-2"></i> Depo Hareketi (Giriş/Çıkış) Gir</a>
+    </div>
+
+</div>
+{% endblock %}

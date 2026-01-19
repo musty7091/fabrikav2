@@ -1,0 +1,220 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ tedarikci.firma_unvani }} - Hesap Ekstresi{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Base.html'den gelen Navbar ve menüleri bu sayfada gizle */
+    nav.navbar, .navbar, .sidebar { display: none !important; }
+    
+    /* GENEL SAYFA AYARLARI */
+    body { 
+        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; 
+        background: #525659 !important; /* Base rengini ez */
+        margin: 0; 
+        padding: 20px; 
+        color: #333;
+    }
+    
+    .page { 
+        background: white; 
+        width: 210mm; 
+        min-height: 297mm; 
+        margin: 0 auto; 
+        padding: 15mm; 
+        box-shadow: 0 0 15px rgba(0,0,0,0.2); 
+        box-sizing: border-box; 
+        position: relative;
+    }
+
+    /* ÜST BİLGİ */
+    .header {
+        display: flex; justify-content: space-between;
+        border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px;
+    }
+    .company-title { font-size: 22px; font-weight: 800; color: #2c3e50; text-transform: uppercase; }
+    .doc-title { font-size: 16px; font-weight: 600; color: #666; text-align: right; }
+    .meta-info { font-size: 12px; color: #555; margin-top: 5px; text-align: right; }
+
+    /* FİRMA KUTUSU */
+    .info-section {
+        display: flex; justify-content: space-between; margin-bottom: 25px;
+        background-color: #f8f9fa; padding: 15px; border: 1px solid #ddd; border-radius: 4px;
+    }
+    .info-col h4 { margin: 0 0 5px 0; font-size: 14px; color: #888; text-transform: uppercase; }
+    .info-col p { margin: 0; font-size: 16px; font-weight: 700; color: #000; }
+    .info-col span { display: block; font-size: 13px; font-weight: normal; color: #555; margin-top: 2px; }
+
+    /* ÖZET KARTLAR */
+    .summary-box { display: flex; gap: 10px; margin-bottom: 25px; }
+    .sum-card { flex: 1; padding: 10px; text-align: right; border: 1px solid #ddd; border-radius: 4px; }
+    .sum-card.borc { background-color: #fff3cd; border-color: #ffeeba; }
+    .sum-card.odenen { background-color: #d1e7dd; border-color: #badbcc; }
+    .sum-card.bakiye { background-color: #cfe2ff; border-color: #b6d4fe; border-width: 2px; }
+    .sum-title { font-size: 11px; text-transform: uppercase; color: #666; font-weight: bold; display: block; margin-bottom: 3px; }
+    .sum-val { font-size: 16px; font-weight: 800; }
+
+    /* TABLO */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+    th { background-color: #2c3e50; color: white; padding: 10px 8px; text-align: left; font-weight: 600; }
+    td { padding: 10px 8px; border-bottom: 1px solid #eee; vertical-align: top; } /* Dikey hizalama üstte */
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    
+    .col-date { width: 12%; }
+    .col-desc { width: 40%; }
+    .col-money { width: 16%; text-align: right; font-family: 'Courier New', monospace; font-weight: 600; font-size: 13px; }
+    
+    /* Yeni: Döviz Alt Yazısı */
+    .fx-sub {
+        display: block;
+        font-size: 10px;
+        color: #666;
+        font-weight: normal;
+        margin-top: 3px;
+        font-style: italic;
+    }
+
+    /* ALT BİLGİ */
+    .footer { margin-top: 40px; border-top: 1px solid #ccc; padding-top: 10px; font-size: 10px; color: #777; text-align: center; }
+    .stamp-area { margin-top: 30px; display: flex; justify-content: flex-end; }
+    .stamp-box { width: 200px; height: 80px; border: 1px dashed #bbb; text-align: center; padding-top: 10px; font-size: 12px; color: #999; }
+
+    @media print {
+        body { background: white !important; margin: 0; padding: 0; }
+        .page { width: 100%; height: auto; box-shadow: none; margin: 0; border: none; padding: 10mm; }
+        .no-print { display: none !important; }
+        /* Toast mesajlarını baskıda gizle */
+        .toast-container { display: none !important; }
+        .sum-card { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        th { -webkit-print-color-adjust: exact; background-color: #2c3e50 !important; color: white !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="no-print" style="position: sticky; top: 0; background: #333; padding: 10px; text-align: center; z-index: 999; box-shadow: 0 2px 10px rgba(0,0,0,0.3);">
+        <button onclick="window.print()" style="padding: 8px 20px; font-size: 14px; font-weight:bold; background: #2ecc71; color: white; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px;">
+            🖨️ YAZDIR / PDF KAYDET
+        </button>
+        <button onclick="history.back()" style="padding: 8px 20px; font-size: 14px; background: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            GERİ DÖN
+        </button>
+    </div>
+
+    <div class="page">
+        <div class="header">
+            <div>
+                <div class="company-title">AECO İNŞAAT</div>
+                <div style="font-size: 12px; color: #555;">Fabrika Yönetim ve Takip Sistemi</div>
+            </div>
+            <div>
+                <div class="doc-title">CARİ HESAP EKSTRESİ</div>
+                <div class="meta-info">
+                    <strong>Tarih:</strong> {{ now|date:"d.m.Y" }}<br>
+                    <strong>Sayfa:</strong> 1 / 1
+                </div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <div class="info-col">
+                <h4>HESAP SAHİBİ (TEDARİKÇİ)</h4>
+                <p>{{ tedarikci.firma_unvani }}</p>
+                <span>Yetkili: {{ tedarikci.yetkili_kisi|default:"-" }} | Tel: {{ tedarikci.telefon|default:"-" }}</span>
+            </div>
+            <div class="info-col" style="text-align: right;">
+                <h4>PROJE / ŞANTİYE</h4>
+                <p>MERKEZ FABRİKA PROJESİ</p>
+                <span>Raporlama Dönemi: Başlangıçtan Bugüne</span>
+            </div>
+        </div>
+
+        <div class="summary-box">
+            <div class="sum-card borc">
+                <span class="sum-title">TOPLAM BORÇ (Hakediş)</span>
+                <span class="sum-val text-danger">{{ toplam_borc|floatformat:2 }} ₺</span>
+            </div>
+            <div class="sum-card odenen">
+                <span class="sum-title">TOPLAM ÖDENEN</span>
+                <span class="sum-val text-success">{{ toplam_alacak|floatformat:2 }} ₺</span>
+            </div>
+            <div class="sum-card bakiye">
+                <span class="sum-title">GÜNCEL BAKİYE (TL)</span>
+                <span class="sum-val" style="color: #0d6efd;">{{ son_bakiye|floatformat:2 }} ₺</span>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-date">TARİH</th>
+                    <th class="col-desc">AÇIKLAMA / İŞLEM</th>
+                    <th class="col-money">BORÇ</th>
+                    <th class="col-money">ALACAK (Ödeme)</th>
+                    <th class="col-money">BAKİYE</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in hareketler %}
+                <tr>
+                    <td>{{ h.tarih|date:"d.m.Y" }}</td>
+                    <td style="font-weight: 500;">
+                        {{ h.aciklama }}
+                    </td>
+                    
+                    <td class="col-money" style="color: #c0392b;">
+                        {% if h.borc > 0 %}
+                            {{ h.borc|floatformat:2 }} ₺
+                            {% if h.para_birimi != 'TRY' %}
+                                <span class="fx-sub">({{ h.doviz_tutari|floatformat:2 }} {{ h.para_birimi }})</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    
+                    <td class="col-money" style="color: #27ae60;">
+                        {% if h.alacak > 0 %}
+                            {{ h.alacak|floatformat:2 }} ₺
+                            {% if h.para_birimi != 'TRY' %}
+                                <span class="fx-sub">({{ h.doviz_tutari|floatformat:2 }} {{ h.para_birimi }})</span>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    
+                    <td class="col-money" style="font-weight: bold; color: #333;">
+                        {{ h.bakiye|floatformat:2 }} ₺
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 20px; color: #999;">
+                        Henüz hareket yok.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="stamp-area">
+            <div class="stamp-box">
+                <p style="margin:0; font-weight:bold; color: #000;">MUTABAKAT / ONAY</p>
+                <br>Kaşe / İmza
+            </div>
+        </div>
+
+        <div class="footer">
+            Bu belge <b>AECO Fabrika Yönetim Sistemi</b> tarafından {{ now|date:"d.m.Y H:i" }} tarihinde oluşturulmuştur.
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        window.onload = function() {
+            setTimeout(function() { window.print(); }, 800);
+        }
+    </script>
+{% endblock %}

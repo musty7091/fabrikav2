@@ -1,0 +1,264 @@
+{% extends 'base.html' %}
+
+{% block title %}Ödeme ve Borç Kapama{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Tablo satırı seçildiğinde renk değişimi */
+    .satir-secili { background-color: #d1e7dd !important; }
+    /* Tutar inputunu sağa yasla ve kalın yap */
+    #id_tutar { text-align: right; font-weight: bold; font-size: 1.2rem; }
+    /* Para birimi seçimini şıklaştır */
+    #id_para_birimi { max-width: 100px; font-weight: bold; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold"><i class="fas fa-wallet text-success me-2"></i> ÖDEME & CARİ KAPAMA</h4>
+        <a href="{% url 'odeme_dashboard' %}" class="btn btn-secondary btn-sm">Geri Dön</a>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-0">
+        <div class="card-body bg-dark text-white rounded">
+            <form method="get">
+                <div class="row align-items-center">
+                    <div class="col-md-3 text-end"><label class="fw-bold">İşlem Yapılacak Firma:</label></div>
+                    <div class="col-md-6">
+                        <select name="tedarikci_id" class="form-select" onchange="this.form.submit()">
+                            <option value="">-- Firma Seçiniz --</option>
+                            {% for ted in tedarikciler %}
+                                <option value="{{ ted.id }}" {% if secilen_tedarikci.id == ted.id %}selected{% endif %}>
+                                    {{ ted.firma_unvani }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if secilen_tedarikci %}
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="tedarikci" value="{{ secilen_tedarikci.id }}">
+
+        <div class="row">
+            
+            <div class="col-lg-4">
+                <div class="card shadow border-0 mb-3 sticky-top" style="top: 20px; z-index: 10;">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0 fw-bold"><i class="fas fa-money-bill-wave me-2"></i> ÖDEME DETAYI</h6>
+                    </div>
+                    <div class="card-body">
+                        
+                        {% if form.errors %}
+                        <div class="alert alert-danger small shadow-sm">
+                            <strong class="d-block mb-1"><i class="fas fa-exclamation-circle"></i> Hata Oluştu:</strong>
+                            <ul class="mb-0 ps-3">
+                            {% for field in form %}
+                                {% for error in field.errors %}
+                                    <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+
+                        <div class="mb-2">
+                            <label class="small fw-bold">Tarih</label>
+                            {{ form.tarih }}
+                        </div>
+                        <div class="mb-2">
+                            <label class="small fw-bold">Yöntem</label>
+                            {{ form.odeme_turu }}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="fw-bold text-success">Ödenecek Tutar</label>
+                            <div class="input-group input-group-lg">
+                                {{ form.tutar }}
+                                {{ form.para_birimi }} 
+                            </div>
+                            <div class="form-text small text-primary">
+                                <i class="fas fa-info-circle"></i> Sağdan fatura seçerek otomatik doldurabilirsiniz.
+                            </div>
+                        </div>
+
+                        <div id="detayAlanlari" style="display: none;" class="bg-light p-2 rounded border mb-3">
+                            {{ form.banka_adi }}
+                            <div class="mt-2">{{ form.cek_no }}</div>
+                            <div class="mt-2" id="vadeAlani" style="display: none;">
+                                <label class="small text-danger fw-bold">Vade Tarihi</label>
+                                {{ form.vade_tarihi }}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="small fw-bold">Açıklama</label>
+                            {{ form.aciklama }}
+                        </div>
+
+                        <button type="submit" class="btn btn-success w-100 fw-bold py-3 shadow">
+                            <i class="fas fa-check-circle me-2"></i> ÖDEMEYİ TAMAMLA
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-8">
+                <div class="card shadow border-0">
+                    <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between">
+                        <h6 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-list-ul me-2 text-warning"></i> AÇIK BORÇ LİSTESİ
+                        </h6>
+                        <span class="badge bg-danger fs-6">Toplam: {{ toplam_borc|floatformat:2 }} ₺</span>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50px;" class="text-center"><i class="fas fa-check-double"></i></th>
+                                    <th>Tarih / Tür</th>
+                                    <th>Açıklama</th>
+                                    <th class="text-end">Kalan Borç</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for kalem in acik_kalemler %}
+                                <tr onclick="satirTikla(this)" style="cursor: pointer;">
+                                    <td class="text-center">
+                                        <input type="checkbox" 
+                                               name="secilen_kalem" 
+                                               value="{{ kalem.tip }}_{{ kalem.id }}" 
+                                               data-tutar="{{ kalem.kalan_tutar|stringformat:'f' }}" 
+                                               class="form-check-input secim-kutusu scale-125">
+                                    </td>
+                                    <td>
+                                        <div class="small fw-bold text-dark">{{ kalem.tarih|date:"d.m.Y" }}</div>
+                                        {% if kalem.tip == 'hakedis' %}
+                                            <span class="badge bg-warning text-dark" style="font-size: 0.7rem;">Hakediş</span>
+                                        {% else %}
+                                            <span class="badge bg-info text-dark" style="font-size: 0.7rem;">Fatura</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="small">{{ kalem.aciklama }}</td>
+                                    <td class="text-end fw-bold text-danger">
+                                        {{ kalem.kalan_tutar|floatformat:2 }} ₺
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-5 text-muted">
+                                        <i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>
+                                        Bu firmaya ait ödenmemiş açık bir kayıt bulunmuyor.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        
+        </div>
+    </form>
+    {% else %}
+        <div class="alert alert-info text-center py-5">
+            <i class="fas fa-arrow-up fa-2x mb-3"></i><br>
+            Lütfen işlem yapmak için yukarıdan bir firma seçiniz.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.secim-kutusu');
+        const tutarInput = document.getElementById('id_tutar');
+        const odemeTuruSelect = document.getElementById('id_odeme_turu');
+
+        if (!tutarInput) {
+            console.error("HATA: 'id_tutar' bulunamadı!");
+        }
+
+        // HESAPLAMA FONKSİYONU
+        function hesapla() {
+            let toplam = 0.0;
+            
+            checkboxes.forEach(chk => {
+                if (chk.checked) {
+                    let hamDeger = chk.getAttribute('data-tutar');
+                    // Gelen veriyi (nokta veya virgül fark etmeksizin) temizle
+                    let temizDeger = hamDeger.replace(',', '.');
+                    let sayi = parseFloat(temizDeger);
+                    
+                    if (!isNaN(sayi)) {
+                        toplam += sayi;
+                    }
+                }
+            });
+
+            if (tutarInput && toplam > 0) {
+                // Türkiye formatı için virgüllü gösterim (Görsel olarak)
+                // Backend yine de float bekleyeceği için views.py'da replace işlemi zaten var.
+                tutarInput.value = toplam.toFixed(2).replace('.', ','); 
+            } else if (tutarInput) {
+                tutarInput.value = ''; 
+            }
+        }
+
+        checkboxes.forEach(chk => {
+            chk.addEventListener('change', function() {
+                hesapla();
+                renklendir(this.closest('tr'));
+            });
+        });
+
+        window.satirTikla = function(tr) {
+            if (event.target.type !== 'checkbox') {
+                const chk = tr.querySelector('input[type="checkbox"]');
+                if (chk) {
+                    chk.checked = !chk.checked;
+                    chk.dispatchEvent(new Event('change'));
+                }
+            }
+        };
+
+        function renklendir(tr) {
+            const chk = tr.querySelector('input[type="checkbox"]');
+            if (chk && chk.checked) {
+                tr.classList.add('satir-secili');
+            } else {
+                tr.classList.remove('satir-secili');
+            }
+        }
+
+        // Ödeme Türü Göster/Gizle
+        const detayDiv = document.getElementById('detayAlanlari');
+        const vadeDiv = document.getElementById('vadeAlani');
+        
+        if(odemeTuruSelect) {
+            odemeTuruSelect.addEventListener('change', function() {
+                const val = this.value;
+                if (val === 'nakit') {
+                    if(detayDiv) detayDiv.style.display = 'none';
+                } else {
+                    if(detayDiv) detayDiv.style.display = 'block';
+                    if (val === 'cek') {
+                        if(vadeDiv) vadeDiv.style.display = 'block';
+                    } else {
+                        if(vadeDiv) vadeDiv.style.display = 'none';
+                    }
+                }
+            });
+            // Sayfa yüklendiğinde tetikle (Eğer eski veri varsa gelsin)
+            odemeTuruSelect.dispatchEvent(new Event('change'));
+        }
+    });
+</script>
+{% endblock %}

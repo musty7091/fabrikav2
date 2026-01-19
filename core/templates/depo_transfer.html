@@ -1,0 +1,238 @@
+{% extends 'base.html' %}
+
+{% block title %}Transfer ve Sevkiyat{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+
+    {% if form.errors %}
+        <div class="alert alert-danger shadow-sm">
+            <h5 class="fw-bold"><i class="fas fa-exclamation-triangle me-2"></i> İşlem Yapılamadı!</h5>
+            <ul class="mb-0">
+            {% for field in form %}
+                {% for error in field.errors %}
+                    <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                {% endfor %}
+            {% endfor %}
+            {% for error in form.non_field_errors %}
+                <li>{{ error }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    {% endif %}
+
+    {% if siparis %}
+    <div class="card shadow-sm border-start border-5 border-primary mb-4">
+        <div class="card-body">
+            <h5 class="fw-bold text-primary mb-3">
+                <i class="fas fa-truck-loading me-2"></i> SEVKİYAT TAKİBİ: {{ siparis.teklif.tedarikci.firma_unvani }}
+            </h5>
+            <div class="row text-center">
+                <div class="col-md-4 border-end">
+                    <small class="text-muted text-uppercase fw-bold">Toplam Faturalanan (Stok)</small>
+                    <div class="fs-4 fw-bold">{{ toplam_faturalanan|floatformat:0 }}</div>
+                    <small class="text-muted">Depoya Giren</small>
+                </div>
+                <div class="col-md-4 border-end">
+                    <small class="text-muted text-uppercase fw-bold">Bugüne Kadar Sevk Edilen</small>
+                    <div class="fs-4 fw-bold text-success">{{ toplam_sevk_edilen|floatformat:0 }}</div>
+                    <small class="text-muted">Transfer Yapılan</small>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-muted text-uppercase fw-bold">Kalan Sevk Hakkı</small>
+                    <div class="fs-4 fw-bold {% if kalan_sevk_hakki <= 0 %}text-danger{% else %}text-warning{% endif %}">
+                        {{ kalan_sevk_hakki|floatformat:0 }}
+                    </div>
+                    {% if kalan_sevk_hakki <= 0 %}
+                        <span class="badge bg-success">SEVKİYAT TAMAMLANDI ✅</span>
+                    {% else %}
+                        <small class="text-muted">Bekleyen</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow border-0">
+                <div class="card-header bg-dark text-white py-3">
+                    <h5 class="mb-0 fw-bold"><i class="fas fa-exchange-alt me-2"></i> TRANSFER İŞLEMİ</h5>
+                </div>
+                <div class="card-body p-4">
+                    
+                    <form method="post" id="transferForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="siparis_id" value="{{ siparis.id|default:'' }}">
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Tarih</label>
+                                {{ form.tarih }}
+                            </div>
+                        </div>
+
+                        <div class="card bg-light border p-3 mb-3">
+                            <div class="row align-items-center">
+                                <div class="col-md-5 text-center">
+                                    <label class="form-label fw-bold text-danger">KAYNAK DEPO</label>
+                                    {{ form.kaynak_depo }}
+                                </div>
+                                <div class="col-md-2 text-center">
+                                    <i class="fas fa-arrow-right fa-2x text-muted opacity-50"></i>
+                                </div>
+                                <div class="col-md-5 text-center">
+                                    <label class="form-label fw-bold text-success">HEDEF DEPO</label>
+                                    {{ form.hedef_depo }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label fw-bold">Malzeme</label>
+                                {{ form.malzeme }}
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold">Miktar</label>
+                                {{ form.miktar }}
+                            </div>
+                        </div>
+                        
+                        <div id="stokBilgiKarti" class="alert alert-warning d-flex justify-content-between align-items-center shadow-sm" style="display: none !important;">
+                            <div>
+                                <small class="text-uppercase fw-bold text-muted d-block">Kaynak Depo Stok</small>
+                                <span class="fs-5 fw-bold text-dark" id="mevcutStok">0</span>
+                            </div>
+                            {% if siparis %}
+                            <div class="text-end border-start ps-3">
+                                <small class="text-uppercase fw-bold text-muted d-block">Siparişten Kalan</small>
+                                <span class="fs-5 fw-bold text-primary">{{ kalan_sevk_hakki|floatformat:0 }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Açıklama</label>
+                            {{ form.aciklama }}
+                        </div>
+
+                        <div class="d-grid gap-2 mt-4">
+                            {% if siparis and kalan_sevk_hakki <= 0 %}
+                                <div class="alert alert-success text-center fw-bold">
+                                    <i class="fas fa-check-circle me-2"></i> Bu siparişin tüm ürünleri sevk edildi.
+                                </div>
+                                <a href="{% url 'siparis_listesi' %}" class="btn btn-secondary">Listeye Dön</a>
+                            {% else %}
+                                <button type="button" id="btnKaydet" class="btn btn-primary btn-lg fw-bold" onclick="formuGonder()">
+                                    <i class="fas fa-save me-2"></i> KAYDET VE SEVK ET
+                                </button>
+                                {% if siparis %}
+                                    <a href="{% url 'siparis_listesi' %}" class="btn btn-outline-secondary">İptal</a>
+                                {% else %}
+                                    <a href="{% url 'stok_listesi' %}" class="btn btn-outline-secondary">İptal</a>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if siparis and gecmis_hareketler %}
+    <div class="row justify-content-center mt-5">
+        <div class="col-lg-10">
+            <div class="card shadow border-0">
+                <div class="card-header bg-secondary text-white fw-bold">
+                    <i class="fas fa-history me-2"></i> BU SİPARİŞİN SEVKİYAT GEÇMİŞİ
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Çıkış Yapılan Depo</th>
+                                <th class="text-center">Miktar</th>
+                                <th>Açıklama</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for hareket in gecmis_hareketler %}
+                            <tr>
+                                <td>{{ hareket.tarih|date:"d.m.Y" }}</td>
+                                <td>{{ hareket.depo.isim }}</td>
+                                <td class="text-center fw-bold">{{ hareket.miktar }}</td>
+                                <td class="small text-muted">{{ hareket.aciklama }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4" class="text-center text-muted py-3">Henüz bir sevkiyat yapılmamış.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 1. GÜVENLİ FORM GÖNDERME FONKSİYONU
+    function formuGonder() {
+        var btn = document.getElementById('btnKaydet');
+        var form = document.getElementById('transferForm');
+
+        // Butonu kilitle ve yazısını değiştir (Çift tıklamayı önler)
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> İşleniyor...';
+
+        // Formu gönder
+        form.submit();
+    }
+
+    // 2. STOK SORGULAMA İŞLEMLERİ (AJAX)
+    document.addEventListener('DOMContentLoaded', function() {
+        const kaynakSelect = document.getElementById('id_kaynak_depo');
+        const malzemeSelect = document.getElementById('id_malzeme');
+        const stokKarti = document.getElementById('stokBilgiKarti');
+        const mevcutSpan = document.getElementById('mevcutStok');
+
+        function stokSorgula() {
+            const depoId = kaynakSelect.value;
+            const malzemeId = malzemeSelect.value;
+
+            if (depoId && malzemeId) {
+                // API'ye sorgu at
+                fetch(`/api/depo-stok/?depo_id=${depoId}&malzeme_id=${malzemeId}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        mevcutSpan.innerText = parseFloat(data.stok) || 0;
+                        stokKarti.style.display = "flex";
+                    })
+                    .catch(err => {
+                        console.error("Stok bilgisi alınamadı:", err);
+                        stokKarti.style.display = "none";
+                    });
+            } else {
+                stokKarti.style.display = "none";
+            }
+        }
+
+        if(kaynakSelect && malzemeSelect){
+            kaynakSelect.addEventListener('change', stokSorgula);
+            malzemeSelect.addEventListener('change', stokSorgula);
+            
+            // Sayfa açıldığında değerler doluysa hemen sorgula (Siparişten gelindiğinde)
+            if (kaynakSelect.value && malzemeSelect.value) {
+                stokSorgula();
+            }
+        }
+    });
+</script>
+{% endblock %}

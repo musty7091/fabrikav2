@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block title %}Cari Hesap Ekstresi{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="d-flex justify-content-between mb-4">
+        <div>
+            <h3 class="fw-bold">{{ tedarikci.firma_unvani }}</h3>
+            <p class="text-muted">Cari Hesap Ekstresi</p>
+        </div>
+        <button onclick="window.print()" class="btn btn-outline-dark">Yazdır / PDF</button>
+    </div>
+
+    <div class="card shadow-sm">
+        <table class="table table-striped mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>Tarih</th>
+                    <th>Açıklama</th>
+                    <th class="text-end">Borç (Alım)</th>
+                    <th class="text-end">Alacak (Ödeme)</th>
+                    <th class="text-end">Bakiye</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for satir in hareketler %}
+                <tr>
+                    <td>{{ satir.tarih|date:"d.m.Y" }}</td>
+                    <td>{{ satir.aciklama }}</td>
+                    <td class="text-end text-danger">{% if satir.borc > 0 %}{{ satir.borc|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end text-success">{% if satir.alacak > 0 %}{{ satir.alacak|floatformat:2 }}{% endif %}</td>
+                    <td class="text-end fw-bold">{{ satir.bakiye|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

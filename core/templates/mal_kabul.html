@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block title %}Sevkiyat Kabul (Transfer){% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card shadow border-0">
+                <div class="card-header bg-warning text-dark py-3 text-center">
+                    <h5 class="mb-0 fw-bold"><i class="fas fa-dolly me-2"></i> SEVKİYAT KABUL (TRANSFER)</h5>
+                </div>
+                <div class="card-body p-4">
+                    
+                    <div class="alert alert-info">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="fas fa-info-circle fa-2x me-3"></i>
+                            <h6 class="mb-0 fw-bold">Bilgilendirme</h6>
+                        </div>
+                        <p class="mb-1 small">
+                            Tedarikçi: <strong>{{ siparis.teklif.tedarikci.firma_unvani }}</strong>
+                        </p>
+                        <p class="mb-0 small">
+                            Sanal Depoda Bekleyen Mal: <strong class="text-danger fs-6">{{ siparis.sanal_depoda_bekleyen }} {{ siparis.teklif.malzeme.get_birim_display }}</strong>
+                        </p>
+                        <hr>
+                        <small class="fst-italic">
+                            * Buradan yapacağınız işlem, malı <b>Sanal Depo</b>'dan düşüp, seçtiğiniz <b>Fiziksel Depo</b>'ya aktarır.
+                        </small>
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label fw-bold">İrsaliye Tarihi</label>
+                                <input type="date" name="tarih" class="form-control" value="{% now 'Y-m-d' %}" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label fw-bold">İrsaliye No</label>
+                                <input type="text" name="irsaliye_no" class="form-control" placeholder="Evrak No" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold text-success">Gelen (Transfer Edilen) Miktar</label>
+                            <input type="number" step="0.01" name="gelen_miktar" class="form-control form-control-lg border-success" 
+                                   placeholder="Örn: 100" max="{{ siparis.sanal_depoda_bekleyen }}" required>
+                            <div class="form-text">
+                                En fazla çekilebilecek miktar: <b>{{ siparis.sanal_depoda_bekleyen }}</b>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Mal Hangi Depoya İniyor?</label>
+                            <select name="depo_id" class="form-select" required>
+                                <option value="">Depo Seçiniz...</option>
+                                {% for depo in depolar %}
+                                    <option value="{{ depo.id }}">{{ depo.isim }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Açıklama (Plaka, Şoför vb.)</label>
+                            <input type="text" name="aciklama" class="form-control" placeholder="Sevkiyat notları...">
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-warning fw-bold">
+                                <i class="fas fa-truck-loading me-2"></i> MALI TESLİM AL (TRANSFER)
+                            </button>
+                            <a href="{% url 'siparis_listesi' %}" class="btn btn-outline-secondary">İptal</a>
+                        </div>
+                    </form>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

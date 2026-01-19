@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+
+{% block title %}Detaylı Envanter Raporu{% endblock %}
+
+{% block extra_css %}
+<style>
+    .card-header { border-bottom: 0; }
+    .btn-sm { font-size: 0.8rem; }
+    
+    /* Yazdırma Ayarları */
+    @media print {
+        .d-print-none { display: none !important; }
+        body { background-color: white; }
+        .card { border: 1px solid #ddd !important; box-shadow: none !important; margin-bottom: 20px !important; }
+        .card-header { color: black !important; background-color: #f0f0f0 !important; border-bottom: 1px solid #000 !important; }
+        .badge { border: 1px solid #000; color: #000 !important; }
+        a { text-decoration: none; color: black; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 1400px;">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold text-dark mb-0">
+                <i class="fas fa-clipboard-list me-2 text-primary"></i> GENEL ENVANTER RAPORU
+            </h3>
+            <p class="text-muted small mb-0">Depolardaki anlık stok durumunun detaylı dökümü.</p>
+        </div>
+        <div class="d-print-none">
+            <button onclick="window.print()" class="btn btn-outline-dark me-2">
+                <i class="fas fa-print me-1"></i> Yazdır
+            </button>
+            <button onclick="exportTableToExcel('raporAlani', 'AECO_Envanter_Raporu')" class="btn btn-success me-2">
+                <i class="fas fa-file-excel me-1"></i> Excel
+            </button>
+            <a href="{% url 'dashboard' %}" class="btn btn-secondary me-2">
+                <i class="fas fa-home me-1"></i> Ana Menü
+            </a>
+            <a href="{% url 'depo_transfer' %}" class="btn btn-primary">
+                <i class="fas fa-dolly me-1"></i> Yeni Transfer
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-4 shadow-sm border-0 d-print-none">
+        <div class="card-body">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0"><i class="fas fa-search text-muted"></i></span>
+                <input type="text" id="aramaKutusu" class="form-control border-start-0" placeholder="Malzeme adı, depo veya kategori ara..." onkeyup="tabloFiltrele()">
+            </div>
+        </div>
+    </div>
+
+    <div id="raporAlani">
+        {% for data in rapor_data %}
+        <div class="card shadow border-0 mb-5 depo-karti">
+            <div class="card-header py-3 text-white {% if data.depo.is_sanal %}bg-warning bg-gradient text-dark{% else %}bg-success bg-gradient{% endif %}">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        {% if data.depo.is_sanal %}
+                            <i class="fas fa-cloud me-2"></i> {{ data.depo.isim }} 
+                            <span class="badge bg-dark bg-opacity-25 ms-2" style="font-size: 0.6em;">TEDARİKÇİ / SANAL</span>
+                        {% else %}
+                            <i class="fas fa-warehouse me-2"></i> {{ data.depo.isim }} 
+                            <span class="badge bg-light text-success ms-2" style="font-size: 0.6em;">FİZİKSEL / MERKEZ</span>
+                        {% endif %}
+                    </h5>
+                    <span class="badge bg-white bg-opacity-25 text-white border border-white">{{ data.stoklar|length }} Kalem Ürün</span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0 align-middle envanter-tablosu">
+                        <thead class="table-light text-secondary small text-uppercase">
+                            <tr>
+                                <th class="ps-4">Malzeme Adı</th>
+                                <th>Kategori</th>
+                                <th class="text-center">Mevcut Stok</th>
+                                <th class="text-end pe-4 d-print-none">İşlemler</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in data.stoklar %}
+                            <tr class="veri-satiri">
+                                <td class="ps-4">
+                                    <div class="fw-bold text-dark">{{ item.malzeme.isim }}</div>
+                                    {% if item.malzeme.marka %}
+                                        <div class="small text-muted">{{ item.malzeme.marka }}</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary fw-normal">{{ item.malzeme.get_kategori_display }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <div class="fs-5 fw-bold {% if item.miktar <= 0 %}text-danger{% else %}text-dark{% endif %}">
+                                        {{ item.miktar|floatformat:2 }}
+                                    </div>
+                                    <small class="text-muted">{{ item.malzeme.get_birim_display }}</small>
+                                </td>
+                                <td class="text-end pe-4 d-print-none">
+                                    <div class="btn-group" role="group">
+                                        <a href="{% url 'depo_transfer' %}?kaynak_depo={{ data.depo.id }}&malzeme={{ item.malzeme.id }}" 
+                                           class="btn btn-sm btn-outline-primary" 
+                                           title="Bu malzemeyi transfer et">
+                                            <i class="fas fa-share me-1"></i> Sevk
+                                        </a>
+                                        <a href="{% url 'stok_hareketleri' item.malzeme.id %}" 
+                                           class="btn btn-sm btn-outline-secondary" 
+                                           title="Hareket Geçmişi">
+                                            <i class="fas fa-history"></i>
+                                        </a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-warning text-center py-5 shadow-sm">
+            <i class="fas fa-cubes fa-3x mb-3 text-warning"></i>
+            <h4>Henüz Envanter Kaydı Oluşmadı</h4>
+            <p class="text-muted">Depolara mal girişi yapıldığında stoklar burada görünecektir.</p>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 1. TABLO FİLTRELEME (ARAMA)
+    function tabloFiltrele() {
+        var input = document.getElementById("aramaKutusu");
+        var filter = input.value.toUpperCase();
+        var cards = document.getElementsByClassName("depo-karti");
+
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var rows = card.getElementsByClassName("veri-satiri");
+            var cardVisible = false;
+
+            for (var j = 0; j < rows.length; j++) {
+                var row = rows[j];
+                var text = row.textContent || row.innerText;
+                var headerText = card.getElementsByClassName("card-header")[0].textContent;
+                
+                if (text.toUpperCase().indexOf(filter) > -1 || headerText.toUpperCase().indexOf(filter) > -1) {
+                    row.style.display = "";
+                    cardVisible = true;
+                } else {
+                    row.style.display = "none";
+                }
+            }
+
+            if (cardVisible) {
+                card.style.display = "";
+            } else {
+                card.style.display = "none";
+            }
+        }
+    }
+
+    // 2. EXCEL'E AKTARMA (Basit Yöntem)
+    function exportTableToExcel(divId, filename) {
+        var downloadLink;
+        var dataType = 'application/vnd.ms-excel';
+        var tableDiv = document.getElementById(divId);
+        
+        var tableHTML = tableDiv.outerHTML.replace(/ /g, '%20');
+        
+        filename = filename ? filename + '.xls' : 'excel_data.xls';
+        
+        downloadLink = document.createElement("a");
+        document.body.appendChild(downloadLink);
+        
+        if (navigator.msSaveOrOpenBlob) {
+            var blob = new Blob(['\ufeff', tableHTML], { type: dataType });
+            navigator.msSaveOrOpenBlob(blob, filename);
+        } else {
+            downloadLink.href = 'data:' + dataType + ', ' + tableHTML;
+            downloadLink.download = filename;
+            downloadLink.click();
+        }
+    }
+</script>
+{% endblock %}

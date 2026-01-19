@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% block title %}{% if duzenleme_modu %}Depo Düzenle{% else %}Depo Ekle{% endif %} | AECO{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="form-container">
+        <h2 class="form-title"><i class="fas fa-warehouse me-2 text-secondary"></i>{% if duzenleme_modu %}Depo Bilgilerini Düzenle{% else %}Yeni Depo Tanımla{% endif %}</h2>
+        <form method="post">
+            {% csrf_token %}
+            
+            <div class="mb-3">
+                <label class="form-label fw-bold">Depo Adı</label>
+                {{ form.isim }}
+            </div>
+
+            <div class="form-check form-switch mb-3">
+                {{ form.is_sanal }}
+                <label class="form-check-label fw-bold">Sanal Depo mu?</label>
+                <small class="d-block text-muted">Sanal depolar fatura kesilip malın henüz şantiyeye ulaşmadığı (tedarikçide beklediği) durumlar için kullanılır.</small>
+            </div>
+
+            <div class="form-check form-switch mb-4">
+                {{ form.is_kullanim_yeri }}
+                <label class="form-check-label fw-bold text-danger">Kullanım / Sarf Yeri mi?</label>
+                <small class="d-block text-muted">
+                    <strong>Dikkat:</strong> İşaretlenirse, bu depoya transfer edilen mallar inşaata gömülmüş (tüketilmiş) sayılır ve genel stoktan düşer.
+                </small>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-dark px-4 rounded-pill">{% if duzenleme_modu %}Güncelle{% else %}Kaydet{% endif %}</button>
+                <a href="{% url 'depo_listesi' %}" class="btn btn-outline-secondary px-4 rounded-pill">Vazgeç</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

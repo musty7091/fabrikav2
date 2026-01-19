@@ -1,0 +1,59 @@
+/* admin_button.css - Jazzmin Üst Menü Özelleştirme */
+
+/* 1. "Ana Sayfa (Dashboard)" Linkini Mavi Buton Yap */
+.navbar-nav .nav-item .nav-link[href="/"] {
+    background-color: #3498db !important; /* Mavi Renk */
+    color: white !important;
+    border-radius: 5px;
+    padding: 8px 20px !important;
+    margin-top: 5px;
+    margin-right: 10px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.3s;
+}
+
+.navbar-nav .nav-item .nav-link[href="/"]:hover {
+    background-color: #2980b9 !important; /* Üzerine gelince koyu mavi */
+    transform: translateY(-2px);
+}
+
+/* 2. "İcmal Listesi" Linkini Yeşil Buton Yap */
+.navbar-nav .nav-item .nav-link[href="/icmal/"] {
+    background-color: #2ecc71 !important; /* Yeşil Renk */
+    color: white !important;
+    border-radius: 5px;
+    padding: 8px 20px !important;
+    margin-top: 5px;
+    margin-right: 10px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: all 0.3s;
+}
+
+.navbar-nav .nav-item .nav-link[href="/icmal/"]:hover {
+    background-color: #27ae60 !important; /* Üzerine gelince koyu yeşil */
+    transform: translateY(-2px);
+}
+
+/* Form Hizalama Düzeltmesi */
+.form-row {
+    border-bottom: 1px solid #f0f0f0; /* Satırlar arasına ince çizgi */
+}
+
+/* Etiketleri (Label) ve Alanları Hizala */
+.field-is_kalemi select,
+.field-malzeme select,
+.field-tedarikci select,
+.field-miktar input {
+    width: 100% !important; /* Kutuları tam genişlik yap */
+    max-width: 600px; /* Çok geniş ekranlarda aşırı uzamasın */
+}
+
+/* Dashboard Kartları için Ek Stil */
+.module-card {
+    text-decoration: none !important;
+}
+.module-card:hover {
+    color: #333 !important;
+}

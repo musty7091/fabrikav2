@@ -1,0 +1,117 @@
+{% extends 'base.html' %} {% block title %}Yeni Hakediş Girişi{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 1000px;">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold text-dark mb-0"><i class="fas fa-file-signature me-2 text-warning"></i> HAKEDİŞ YÖNETİMİ</h3>
+            <p class="text-muted small mb-0">Hizmet ve taşeron ödemeleri için ilerleme kaydı.</p>
+        </div>
+        <div>
+            <a href="{% url 'siparis_listesi' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Listeye Dön
+            </a>
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-12">
+            <div class="card shadow border-0">
+                <div class="card-header bg-dark text-white py-3">
+                    <h5 class="mb-0 fw-bold">YENİ HAKEDİŞ GİRİŞİ</h5>
+                </div>
+                <div class="card-body p-4">
+                    
+                    <div class="alert alert-info border-info shadow-sm mb-4">
+                        <div class="row align-items-center">
+                            <div class="col-auto">
+                                <i class="fas fa-hard-hat fa-3x text-info"></i>
+                            </div>
+                            <div class="col">
+                                <h6 class="fw-bold text-uppercase mb-1">Sözleşme Bilgileri</h6>
+                                <div class="row small">
+                                    <div class="col-md-6">
+                                        <strong>Firma:</strong> {{ siparis.teklif.tedarikci.firma_unvani }}<br>
+                                        <strong>İşin Adı:</strong> {{ siparis.teklif.is_kalemi.isim }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <strong>Toplam İş:</strong> {{ siparis.toplam_miktar }} {{ siparis.teklif.is_kalemi.get_birim_display }}<br>
+                                        <strong>Mevcut İlerleme:</strong> 
+                                        <span class="badge bg-white text-dark border">{{ siparis.teslim_edilen|floatformat:0 }}</span> 
+                                        (%{{ siparis.tamamlanma_yuzdesi|floatformat:2 }})
+                                        <br>
+                                        <strong class="text-danger mt-1 d-block">
+                                            Kalan Girilebilir Kapasite: %{{ 100|add:mevcut_toplam|floatformat:2 }}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Hakediş No</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="fas fa-hashtag"></i></span>
+                                    {{ form.hakedis_no }}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Düzenleme Tarihi</label>
+                                {{ form.tarih }}
+                            </div>
+                        </div>
+
+                        <div class="card bg-light border mb-4">
+                            <div class="card-body py-3">
+                                <label class="form-label fw-bold text-primary mb-2"><i class="fas fa-calendar-alt me-1"></i> Hakediş Dönemi</label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-muted">Başlangıç</label>
+                                        {{ form.donem_baslangic }}
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-muted">Bitiş</label>
+                                        {{ form.donem_bitis }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-danger fs-5">Bu Dönem İlerleme Yüzdesi (%)</label>
+                            <div class="input-group input-group-lg">
+                                {{ form.tamamlanma_orani }}
+                                <span class="input-group-text fw-bold">%</span>
+                            </div>
+                            <div class="form-text text-muted">
+                                <i class="fas fa-exclamation-circle me-1"></i> Toplam işin ne kadarı <strong>sadece bu hakediş kapsamında</strong> tamamlandı? (Örn: 20)
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Açıklama / Yapılan İmalatlar</label>
+                            {{ form.aciklama }}
+                            <div class="form-text">Örn: Zemin tesviyesi yapıldı, 1. kat beton döküldü...</div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-success btn-lg fw-bold shadow-sm">
+                                <i class="fas fa-save me-2"></i> HAKEDİŞİ KAYDET VE İŞLE
+                            </button>
+                            <a href="{% url 'siparis_listesi' %}" class="btn btn-outline-secondary">İptal</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

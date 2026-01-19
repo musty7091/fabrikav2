@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Erişim Engellendi{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Bu sayfaya özel ortalama stilleri */
+    .error-wrapper { display: flex; align-items: center; justify-content: center; min-height: 70vh; text-align: center; }
+    .error-card { max-width: 500px; padding: 40px; background: white; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+    .icon-lock { font-size: 80px; color: #dc3545; margin-bottom: 20px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="error-wrapper">
+    <div class="error-card">
+        <div class="icon-lock">🔒</div>
+        <h2 class="fw-bold mb-3">Erişim Yetkiniz Yok</h2>
+        <p class="text-muted mb-4">
+            Bu modüle girmek için gerekli yetkiye sahip değilsiniz.<br>
+            Lütfen yöneticinizle görüşün veya ana menüye dönün.
+        </p>
+        <a href="{% url 'dashboard' %}" class="btn btn-primary btn-lg rounded-pill px-5">Ana Menüye Dön</a>
+    </div>
+</div>
+{% endblock %}

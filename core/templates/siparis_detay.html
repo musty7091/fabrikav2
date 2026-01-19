@@ -1,0 +1,147 @@
+{% extends 'base.html' %}
+
+{% block title %}Sipariş Detayı ve Geçmişi{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold mb-0"><i class="fas fa-file-contract me-2"></i> SİPARİŞ KARTI</h3>
+            <span class="text-muted small">Sipariş ID: #{{ siparis.id }} | Tarih: {{ siparis.siparis_tarihi|date:"d.m.Y" }}</span>
+        </div>
+        <a href="{% url 'siparis_listesi' %}" class="btn btn-secondary"><i class="fas fa-arrow-left me-1"></i> Listeye Dön</a>
+    </div>
+
+    <div class="card shadow-sm mb-4 border-start border-5 border-primary">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-4 border-end">
+                    <small class="text-uppercase text-muted fw-bold">Tedarikçi</small>
+                    <div class="fs-5 text-dark">{{ siparis.teklif.tedarikci.firma_unvani }}</div>
+                </div>
+                <div class="col-md-4 border-end">
+                    <small class="text-uppercase text-muted fw-bold">Ürün / Hizmet</small>
+                    <div class="fs-5 text-primary">
+                        {% if siparis.teklif.malzeme %}
+                            <i class="fas fa-box me-1"></i> {{ siparis.teklif.malzeme.isim }}
+                        {% else %}
+                            <i class="fas fa-tools me-1"></i> {{ siparis.teklif.is_kalemi.isim }}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <small class="text-uppercase text-muted fw-bold">Durum & İlerleme</small>
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div>
+                            <span class="fw-bold fs-4">{{ siparis.teslim_edilen|floatformat:0 }}</span>
+                            <span class="text-muted">/ {{ siparis.toplam_miktar|floatformat:0 }}</span>
+                        </div>
+                        {% if siparis.teslimat_durumu == 'tamamlandi' %}
+                            <span class="badge bg-success">TAMAMLANDI</span>
+                        {% else %}
+                            <span class="badge bg-warning text-dark">DEVAM EDİYOR</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header bg-dark text-white fw-bold d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-file-invoice me-2"></i> GİRİLEN FATURALAR (Resmi Evraklar)</span>
+            <a href="{% url 'fatura_girisi' siparis.id %}" class="btn btn-sm btn-success fw-bold"><i class="fas fa-plus me-1"></i> YENİ FATURA GİR</a>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Fatura Tarihi</th>
+                        <th>Fatura No</th>
+                        <th>Miktar</th>
+                        <th>Tutar (KDV Dahil)</th>
+                        <th>Depo / Konum</th>
+                        <th class="text-end">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fatura in siparis.faturalar.all %}
+                    <tr>
+                        <td>{{ fatura.tarih|date:"d.m.Y" }}</td>
+                        <td class="fw-bold">{{ fatura.fatura_no }}</td>
+                        <td><span class="badge bg-info text-dark">{{ fatura.miktar }}</span></td>
+                        <td class="fw-bold text-success">{{ fatura.tutar|floatformat:2 }} TL</td>
+                        <td>
+                            {% if fatura.depo %}
+                                {% if fatura.depo.is_sanal %}
+                                    <span class="badge bg-warning text-dark"><i class="fas fa-globe me-1"></i> SANAL (Tedarikçide)</span>
+                                {% else %}
+                                    <span class="badge bg-secondary"><i class="fas fa-warehouse me-1"></i> {{ fatura.depo.isim }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{% url 'fatura_sil' fatura.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Bu faturayı iptal etmek istediğinize emin misiniz? \n\nBu işlem:\n1. Stoktan düşecek\n2. Sipariş miktarını geri alacak\n3. Cari borcu silecek');">
+                                <i class="fas fa-trash-alt me-1"></i> İptal Et
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4 text-muted">Henüz bu siparişe ait fatura girişi yapılmamış.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card shadow border-0">
+        <div class="card-header bg-white text-muted fw-bold">
+            <i class="fas fa-history me-2"></i> Hareket Geçmişi (Log)
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-striped mb-0 small">
+                <thead>
+                    <tr>
+                        <th>Tarih</th>
+                        <th>İşlem</th>
+                        <th>Miktar</th>
+                        <th>İrsaliye/Belge</th>
+                        <th>Depo</th>
+                        <th>Açıklama</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for hareket in hareketler %}
+                    <tr>
+                        <td>{{ hareket.tarih|date:"d.m.Y" }}</td>
+                        <td>
+                            {% if hareket.islem_turu == 'giris' %}
+                                <span class="text-success fw-bold">GİRİŞ</span>
+                            {% elif hareket.islem_turu == 'cikis' %}
+                                <span class="text-danger fw-bold">ÇIKIŞ</span>
+                            {% else %}
+                                <span class="text-warning fw-bold">İADE</span>
+                            {% endif %}
+                        </td>
+                        <td class="fw-bold">{{ hareket.miktar|floatformat:0 }}</td>
+                        <td>{{ hareket.irsaliye_no|default:"-" }}</td>
+                        <td>{{ hareket.depo.isim|default:"-" }}</td>
+                        <td class="text-muted">{{ hareket.aciklama }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-3 text-muted">Henüz hareket yok.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

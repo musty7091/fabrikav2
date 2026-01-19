@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+
+{% block title %}Sipariş ve Mal Kabul Yönetimi{% endblock %}
+
+{% block extra_css %}
+<style>
+    .progress-thin { height: 10px; border-radius: 5px; }
+    .table-hover tbody tr:hover { background-color: #f1f1f1; }
+    .card-header { border-bottom: 0; }
+    .btn-group-sm > .btn, .btn-sm { font-size: 0.8rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width: 1500px;">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0 text-dark fw-bold"><i class="fas fa-shipping-fast me-2 text-primary"></i> SİPARİŞ TAKİBİ & SEVKİYAT</h1>
+            <p class="text-muted small mb-0">Malzeme siparişlerini, fatura girişlerini ve sanal depodan sevkiyatları yönetin.</p>
+        </div>
+        <div>
+            <a href="{% url 'icmal_raporu' %}" class="btn btn-outline-primary me-2"><i class="fas fa-list-ul me-1"></i> İcmal'e Dön</a>
+            <a href="{% url 'dashboard' %}" class="btn btn-secondary"><i class="fas fa-home me-1"></i> Ana Menü</a>
+        </div>
+    </div>
+
+    <div class="card shadow mb-5 border-0">
+        <div class="card-header bg-warning bg-gradient text-dark fw-bold py-3 d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-clock me-2"></i> TESLİMAT / İLERLEME BEKLEYENLER (AKTİF)</span>
+            <span class="badge bg-dark text-warning">{{ bekleyenler|length }} Adet</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-secondary text-uppercase small">
+                        <tr>
+                            <th class="ps-4">Tedarikçi Firma</th>
+                            <th>İş / Malzeme</th>
+                            <th class="text-center">Sipariş</th>
+                            <th class="text-center">İlerleme / Stok</th>
+                            <th class="text-center">Durum</th>
+                            <th style="width: 15%;">Tamamlanma</th>
+                            <th class="text-end pe-4">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for siparis in bekleyenler %}
+                        <tr>
+                            <td class="ps-4">
+                                <div class="fw-bold text-dark">{{ siparis.teklif.tedarikci.firma_unvani }}</div>
+                                <div class="small text-muted"><i class="fas fa-phone-alt me-1"></i> {{ siparis.teklif.tedarikci.telefon|default:"-" }}</div>
+                            </td>
+                            
+                            <td>
+                                {% if siparis.teklif.malzeme %}
+                                    <div class="text-primary fw-bold"><i class="fas fa-box me-1"></i> {{ siparis.teklif.malzeme.isim }}</div>
+                                    <div class="small text-muted">Malzeme Alımı</div>
+                                {% elif siparis.teklif.is_kalemi %}
+                                    <div class="text-danger fw-bold"><i class="fas fa-hard-hat me-1"></i> {{ siparis.teklif.is_kalemi.isim }}</div>
+                                    <div class="small text-muted">Hizmet / Taşeron</div>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+
+                            <td class="text-center">
+                                <span class="fw-bold">{{ siparis.toplam_miktar|floatformat:0 }}</span>
+                                <span class="small text-muted">
+                                    {% if siparis.teklif.malzeme %}{{ siparis.teklif.malzeme.get_birim_display }}
+                                    {% else %}{{ siparis.teklif.is_kalemi.get_birim_display }}{% endif %}
+                                </span>
+                            </td>
+                            
+                            <td class="text-center fw-bold">
+                                {% if siparis.teklif.malzeme %}
+                                    <span class="text-success">{{ siparis.teslim_edilen|floatformat:0 }}</span>
+                                {% else %}
+                                    <span class="text-primary">{{ siparis.teslim_edilen|floatformat:0 }}</span>
+                                {% endif %}
+                            </td>
+                            
+                            <td class="text-center">
+                                {% if siparis.sanal_depoda_bekleyen > 0 %}
+                                    <span class="badge bg-warning text-dark border border-dark">
+                                        <i class="fas fa-warehouse me-1"></i> SANAL DEPODA
+                                    </span>
+                                    <div class="small text-muted mt-1 fw-bold">
+                                        {{ siparis.sanal_depoda_bekleyen|floatformat:0 }} Bekliyor
+                                    </div>
+                                {% elif siparis.kalan_miktar > 0 %}
+                                    <span class="badge bg-secondary">
+                                        {{ siparis.kalan_miktar|floatformat:0 }} Eksik
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-info">İşlemde</span>
+                                {% endif %}
+                            </td>
+
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="small me-2 text-muted">%{{ siparis.tamamlanma_yuzdesi|floatformat:0 }}</span>
+                                    <div class="progress progress-thin flex-grow-1">
+                                        <div class="progress-bar {% if siparis.tamamlanma_yuzdesi > 90 %}bg-success{% else %}bg-warning{% endif %}" 
+                                             role="progressbar" 
+                                             style="width: {{ siparis.tamamlanma_yuzdesi }}%">
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+
+                            <td class="text-end pe-4">
+                                <div class="btn-group" role="group">
+                                    {% if siparis.teklif.malzeme %}
+                                        {% if siparis.kalan_fatura_miktar > 0 %}
+                                        <a href="{% url 'fatura_girisi' siparis.id %}" class="btn btn-sm btn-success text-white fw-bold" title="Fatura Gir">
+                                            <i class="fas fa-file-invoice-dollar"></i> Fatura
+                                        </a>
+                                        {% endif %}
+
+                                        {% if siparis.sanal_depoda_bekleyen > 0 %}
+                                        <a href="{% url 'depo_transfer' %}?siparis_id={{ siparis.id }}" class="btn btn-sm btn-primary fw-bold" title="Sanal Depodan Çek">
+                                            <i class="fas fa-truck-loading me-1"></i> Sevk
+                                        </a>
+                                        {% endif %}
+                                        
+                                        <a href="{% url 'stok_hareketleri' siparis.teklif.malzeme.id %}" class="btn btn-sm btn-secondary" title="Stok Geçmişi">
+                                            <i class="fas fa-history"></i>
+                                        </a>
+
+                                    {% else %}
+                                        {% if siparis.kalan_miktar > 0 %}
+                                        <a href="{% url 'hakedis_ekle' siparis.id %}" class="btn btn-sm btn-dark text-warning fw-bold" title="Hakediş Girişi">
+                                            <i class="fas fa-file-signature me-1"></i> Hakediş
+                                        </a>
+                                        {% endif %}
+                                    {% endif %}
+
+                                    <a href="{% url 'siparis_detay' siparis.id %}" class="btn btn-sm btn-outline-dark" title="Detay">
+                                        <i class="fas fa-search"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7" class="text-center py-5 text-muted h5"><i class="fas fa-check-circle text-success me-2"></i>Bekleyen veya sevkiyatı süren sipariş yok.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow border-0" style="border-top: 5px solid #198754;">
+        <div class="card-header bg-white text-success fw-bold py-3">
+            <i class="fas fa-archive me-2"></i> TAMAMLANAN SİPARİŞ GEÇMİŞİ (TESLİM ALINANLAR)
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-secondary small text-uppercase">
+                        <tr>
+                            <th class="ps-4">Tedarikçi</th>
+                            <th>Malzeme / İş</th>
+                            <th>Tarih</th>
+                            <th class="text-center">Miktar</th>
+                            <th class="text-center">Durum</th>
+                            <th class="text-end pe-4">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for siparis in bitenler %}
+                        <tr>
+                            <td class="ps-4 text-secondary">{{ siparis.teklif.tedarikci.firma_unvani }}</td>
+                            <td>
+                                {% if siparis.teklif.malzeme %}
+                                    <i class="fas fa-box text-secondary me-1"></i> {{ siparis.teklif.malzeme.isim }}
+                                {% else %}
+                                    <i class="fas fa-hard-hat text-secondary me-1"></i> {{ siparis.teklif.is_kalemi.isim }}
+                                {% endif %}
+                            </td>
+                            <td>{{ siparis.siparis_tarihi|date:"d.m.Y" }}</td>
+                            
+                            <td class="text-center fw-bold text-success">
+                                {{ siparis.teslim_edilen|floatformat:0 }}
+                            </td>
+
+                            <td class="text-center">
+                                <span class="badge bg-success"><i class="fas fa-check-double"></i> Tamamlandı</span>
+                            </td>
+
+                            <td class="text-end pe-4">
+                                <div class="btn-group" role="group">
+                                    {% if siparis.teklif.malzeme %}
+                                        <a href="{% url 'stok_hareketleri' siparis.teklif.malzeme.id %}" class="btn btn-sm btn-outline-secondary" title="Geçmiş">
+                                            <i class="fas fa-history"></i>
+                                        </a>
+                                    {% endif %}
+                                    <a href="{% url 'siparis_detay' siparis.id %}" class="btn btn-sm btn-outline-dark" title="Detay">
+                                        <i class="fas fa-search"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="text-center py-4 text-muted">Henüz tamamlanmış bir sipariş bulunmuyor.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

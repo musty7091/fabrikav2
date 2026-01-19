@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Hizmet Ekle | AECO{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="form-container">
+        <h2 class="form-title"><i class="fas fa-tools me-2 text-info"></i> Yeni Hizmet Tanımla</h2>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3"><label class="form-label fw-bold">Hizmet / İş Adı</label>{{ form.isim }}</div>
+            <div class="row mb-3">
+                <div class="col-md-6"><label class="form-label fw-bold">Kategori</label>{{ form.kategori }}</div>
+                <div class="col-md-6"><label class="form-label fw-bold">Birim</label>{{ form.birim }}</div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-6"><label class="form-label fw-bold">Hedef Miktar (Metraj)</label>{{ form.hedef_miktar }}</div>
+                <div class="col-md-6"><label class="form-label fw-bold">KDV Oranı</label>{{ form.kdv_orani }}</div>
+            </div>
+            <div class="mb-4"><label class="form-label fw-bold">Açıklama</label>{{ form.aciklama }}</div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-info text-white px-4 rounded-pill w-100">Kaydet</button>
+                <a href="{% url 'hizmet_listesi' %}" class="btn btn-outline-secondary px-4 rounded-pill">Vazgeç</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

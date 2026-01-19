@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block title %}Yeni Talep Oluştur{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Bu sayfaya özel arka plan ve padding ayarı */
+    /* Base.html body rengini ezmek gerekebilir */
+    body { background-color: #f0f2f5; } 
+    .container-wrapper { padding: 20px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container d-flex justify-content-center align-items-center container-wrapper" style="min-height: 90vh;">
+    <div class="card shadow-lg" style="width: 100%; max-width: 700px; border-radius: 15px; overflow: hidden;">
+        <div class="card-header bg-primary text-white p-4 text-center">
+            <h4 class="mb-0 fw-bold"><i class="fas fa-hard-hat me-2"></i> YENİ SAHA TALEBİ</h4>
+            <p class="mb-0 small opacity-75">Malzeme veya Hizmet (İşçilik) taleplerinizi buradan giriniz.</p>
+        </div>
+        <div class="card-body p-4 bg-white">
+            
+            <form method="post">
+                {% csrf_token %}
+                
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded bg-light h-100">
+                            <label class="form-label fw-bold text-primary"><i class="fas fa-box me-1"></i> Malzeme (Satınalma)</label>
+                            {{ form.malzeme }}
+                            <div class="form-text small">Çimento, Demir, Tuğla vb.</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded bg-light h-100">
+                            <label class="form-label fw-bold text-danger"><i class="fas fa-tools me-1"></i> İş Kalemi (Hizmet)</label>
+                            {{ form.is_kalemi }}
+                            <div class="form-text small">Hafriyat, Sıva İşçiliği, Kırım vb.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="form-label fw-bold text-secondary">Miktar</label>
+                        {{ form.miktar }}
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label fw-bold text-secondary">Aciliyet</label>
+                        {{ form.oncelik }}
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold text-secondary">Kullanılacak Yer (Mahal)</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light"><i class="fas fa-map-marker-alt"></i></span>
+                        {{ form.proje_yeri }}
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold text-secondary">Açıklama / Notlar</label>
+                    {{ form.aciklama }}
+                </div>
+
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-primary btn-lg fw-bold">
+                        <i class="fas fa-paper-plane me-2"></i> TALEBİ OLUŞTUR
+                    </button>
+                    <a href="{% url 'dashboard' %}" class="btn btn-light text-muted">İptal / Ana Menü</a>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const malzemeSelect = document.getElementById('id_malzeme');
+        const isKalemiSelect = document.getElementById('id_is_kalemi');
+
+        function toggleInputs() {
+            if (malzemeSelect.value) {
+                isKalemiSelect.disabled = true;
+                isKalemiSelect.style.backgroundColor = "#e9ecef"; // Gri yap
+            } else {
+                isKalemiSelect.disabled = false;
+                isKalemiSelect.style.backgroundColor = "";
+            }
+
+            if (isKalemiSelect.value) {
+                malzemeSelect.disabled = true;
+                malzemeSelect.style.backgroundColor = "#e9ecef";
+            } else {
+                malzemeSelect.disabled = false;
+                malzemeSelect.style.backgroundColor = "";
+            }
+        }
+
+        malzemeSelect.addEventListener('change', toggleInputs);
+        isKalemiSelect.addEventListener('change', toggleInputs);
+        
+        // Açılışta çalıştır
+        toggleInputs();
+    });
+</script>
+{% endblock %}

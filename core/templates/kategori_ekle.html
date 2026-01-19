@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}{% if duzenleme_modu %}Kategori Düzenle{% else %}İmalat Türü Ekle{% endif %} | AECO{% endblock %}
+{% block content %}
+<div class="container">
+    <div class="form-container">
+        <h2 class="form-title"><i class="fas fa-tags me-2 text-primary"></i> {% if duzenleme_modu %}Kategoriyi Düzenle{% else %}Yeni İmalat Türü Tanımla{% endif %}</h2>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-4"><label class="form-label fw-bold">Kategori / İmalat Türü Adı</label>{{ form.isim }}</div>
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary px-4 rounded-pill"><i class="fas fa-save me-2"></i> {% if duzenleme_modu %}Güncelle{% else %}Kaydet{% endif %}</button>
+                <a href="{% url 'kategori_listesi' %}" class="btn btn-outline-secondary px-4 rounded-pill">Vazgeç</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

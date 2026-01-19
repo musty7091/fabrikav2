@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+
+{% block extra_css %}
+<style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .main-container { max-width: 1000px; width: 100%; padding: 20px; }
+    .welcome-text { text-align: center; margin-bottom: 40px; color: #2c3e50; }
+    .welcome-text h1 { font-weight: 800; letter-spacing: -1px; margin-bottom: 10px; }
+    .welcome-text p { color: #7f8c8d; font-size: 1.1rem; }
+    .module-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; }
+    .module-card {
+        background: white; border-radius: 15px; padding: 30px;
+        text-align: center; text-decoration: none; color: #333;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.05); transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        border: 2px solid transparent; position: relative; overflow: hidden;
+        display: flex; flex-direction: column; justify-content: center; align-items: center; height: 220px;
+    }
+    .module-card:hover { transform: translateY(-8px); box-shadow: 0 15px 35px rgba(0,0,0,0.1); border-color: #3498db; }
+    .module-card i { font-size: 3.5rem; margin-bottom: 20px; color: #3498db; transition: color 0.3s; }
+    .module-card:hover i { color: #0d6efd; transform: scale(1.1); }
+    .module-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 10px; display: block; }
+    .module-desc { font-size: 0.9rem; color: #95a5a6; display: block; }
+    .card-teklif { border-bottom: 5px solid #f1c40f; }
+    .card-finans { border-bottom: 5px solid #2ecc71; }
+    .card-depo { border-bottom: 5px solid #e67e22; }
+    .card-odeme { border-bottom: 5px solid #e74c3c; }
+    .btn-logout { position: absolute; top: 20px; right: 20px; }
+    .admin-link { position: absolute; top: 20px; left: 20px; }
+    .badge-notify {
+        position: absolute; top: 15px; right: 15px; background-color: #ff4757; color: white;
+        border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+        font-weight: bold; font-size: 0.9rem; box-shadow: 0 4px 10px rgba(255, 71, 87, 0.4); animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.15); } 100% { transform: scale(1); } }
+    @media (max-width: 768px) { .module-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+    <a href="/admin/" class="btn btn-outline-dark admin-link rounded-pill px-4"><i class="fas fa-cog me-2"></i> Admin Panel</a>
+    <a href="{% url 'cikis_yap' %}" class="btn btn-danger btn-logout rounded-pill px-4"><i class="fas fa-sign-out-alt me-2"></i> Çıkış</a>
+
+    <div class="main-container">
+        <div class="welcome-text">
+            <h1>🏭 AECO FABRİKA YÖNETİMİ</h1>
+            <p>Hoşgeldiniz, <strong>{{ request.user.username|upper }}</strong>. Lütfen işlem yapmak istediğiniz modülü seçiniz.</p>
+        </div>
+
+        <div class="text-center mb-5">
+            <a href="{% url 'talep_olustur' %}" class="btn btn-primary btn-lg rounded-pill px-5 shadow fw-bold" style="transform: scale(1.1);">
+                <i class="fas fa-plus-circle me-2"></i> SAHADAN TALEP OLUŞTUR
+            </a>
+        </div>
+
+        <div class="module-grid">
+            <a href="{% url 'icmal_raporu' %}" class="module-card card-teklif">
+                {% if bekleyen_talep_sayisi > 0 %}
+                <div class="badge-notify">{{ bekleyen_talep_sayisi }}</div>
+                {% endif %}
+                <i class="fas fa-file-invoice-dollar" style="color: #f1c40f;"></i>
+                <span class="module-title">Teklif Yönetimi</span>
+                <span class="module-desc">İcmal Listesi, Fiyat Karşılaştırma ve Tedarikçi Seçimi</span>
+            </a>
+            <a href="{% url 'siparis_listesi' %}" class="module-card card-teklif" style="border-bottom: 5px solid #69dcff;">
+                <i class="fas fa-box-open" style="color: #ff50f0;"></i>
+                <span class="module-title">Onaylı Teklifler & Mal Kabul</span>
+                <span class="module-desc">Onaylı Tekliflerin Takibi ve Gelen Malların Kaydı</span>
+            </a>
+            <a href="{% url 'tanim_yonetimi' %}" class="module-card card-depo">
+                <i class="fas fa-truck-loading" style="color: #e67e22;"></i>
+                <span class="module-title">Tanım Yönetimi</span>
+                <span class="module-desc">Stok, Hizmet, Tedarikçi ve Kategori Tanımlamaları</span>
+            </a>
+            <a href="{% url 'odeme_dashboard' %}" class="module-card card-odeme">
+                <i class="fas fa-money-check-alt" style="color: #e74c3c;"></i>
+                <span class="module-title">Hakediş & Cari Ödemeleri</span>
+                <span class="module-desc">Taşeron Hakedişleri, Borç Kapama ve Çek Takibi</span>
+            </a>
+            <a href="{% url 'envanter_raporu' %}" class="module-card card-finans" style="border-bottom: 5px solid #17a2b8;">
+                <i class="fas fa-clipboard-list" style="color: #17a2b8;"></i>
+                <span class="module-title">Envanter Raporu</span>
+                <span class="module-desc">Depo Stok Durumu ve Depolar Arası Transferler</span>
+            </a>
+            <a href="{% url 'finans_dashboard' %}" class="module-card card-finans">
+                <i class="fas fa-chart-pie" style="color: #2ecc71;"></i>
+                <span class="module-title">Finansal Özet Raporu</span>
+                <span class="module-desc">Bütçe Durumu, Masraf Girişi</span>
+            </a>
+        </div>
+    </div>
+{% endblock %}
