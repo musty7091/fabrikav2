@@ -9,50 +9,48 @@ from core.services import StockService
 
 logger = logging.getLogger(__name__)
 
+
 @receiver(post_save, sender=DepoTransfer)
-def depo_transfer_post_save(sender, instance, created, **kwargs):
+def depo_transfer_post_save(sender, instance: DepoTransfer, created: bool, **kwargs):
     """
-    Uzman Önerisi:
-    - FIFO ile otomatik sipariş eşleştirme yapar.
-    - Stok hareketlerini merkezi StockService üzerinden yönetir.
-    - Tüm işlemi transaction.atomic ile garantiye alır.
+    Hedef:
+    - DepoTransfer sadece "belge"dir.
+    - Stok hareketini TEK KAPI StockService yazar.
+    - FIFO eşleştirme sadece Vendor kaynaklı çıkışlarda çalışır.
+    - Idempotency: transfer_id ile çift kayıt olmaz.
     """
     if not created:
         return
 
     with transaction.atomic():
-        # 1) Sipariş (bagli_siparis) belirleme ve FIFO Eşleşme
-        siparis_obj = getattr(instance, "bagli_siparis", None)
+        siparis_obj = instance.bagli_siparis
 
-        if not siparis_obj and instance.kaynak_depo.is_sanal:
-            try:
-                aday_siparisler = (
+        # 1) FIFO eşleştirme (sadece Vendor'dan çıkışlarda)
+        try:
+            kaynak_vendor = (
+                getattr(instance.kaynak_depo, "depo_tipi", None) == "VENDOR"
+                or getattr(instance.kaynak_depo, "is_sanal", False)
+            )
+
+            if (siparis_obj is None) and kaynak_vendor:
+                adaylar = (
                     SatinAlma.objects
                     .filter(teklif__malzeme=instance.malzeme)
                     .exclude(teslimat_durumu="tamamlandi")
                     .order_by("created_at")
+                    .select_related("teklif", "teklif__malzeme")
                 )
-
-                for aday in aday_siparisler:
-                    # 'sanal_depoda_bekleyen' üzerinden FIFO kontrolü
+                for aday in adaylar:
                     if aday.sanal_depoda_bekleyen > 0:
                         siparis_obj = aday
-                        
-                        # Açıklamayı ve siparişi güncelle
-                        mevcut_not = (instance.aciklama or "").strip()
-                        ek_not = f"Oto. Sipariş #{aday.id}"
-                        instance.aciklama = f"{mevcut_not} ({ek_not})" if mevcut_not else ek_not
-                        instance.bagli_siparis = aday
-                        
-                        # Sadece gerekli alanları update et (recursive sinyali önlemek için)
-                        instance.save(update_fields=["bagli_siparis", "aciklama"])
                         break
+        except Exception:
+            logger.exception("FIFO eşleşme hatası (DepoTransfer id=%s)", instance.id)
 
-            except Exception:
-                logger.exception("FIFO eşleşme hatası (DepoTransfer id=%s)", instance.id)
-
-        # 2) STOK DEĞİŞTİREN TEK KAPI: StockService
+        # 2) TEK KAPI: StockService (idempotent)
         StockService.execute_transfer(
+            transfer_id=instance.id,
+            ref_type="TRANSFER",
             malzeme=instance.malzeme,
             miktar=instance.miktar,
             kaynak_depo=instance.kaynak_depo,
@@ -62,6 +60,10 @@ def depo_transfer_post_save(sender, instance, created, **kwargs):
             tarih=instance.tarih,
         )
 
-        # 3) Sipariş durum güncellemesini tetikle
+        # 3) Sipariş bağını DB'de güncelle (recursive sinyal yok)
+        if (instance.bagli_siparis_id is None) and (siparis_obj is not None):
+            DepoTransfer.objects.filter(pk=instance.pk).update(bagli_siparis=siparis_obj)
+
+        # 4) Sipariş durum güncelle (teslimat durumu vs)
         if siparis_obj:
             siparis_obj.save()
