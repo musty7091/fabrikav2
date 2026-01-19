@@ -2,7 +2,9 @@ from django.contrib import admin
 from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
-from core import views 
+from core import views
+from core.views.ekstre import stok_ekstresi, cari_ekstresi
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -76,6 +78,8 @@ urlpatterns = [
     path('islem-sonuc/<str:model_name>/<int:pk>/', views.islem_sonuc, name='islem_sonuc'),
     path('yazdir/<str:model_name>/<int:pk>/', views.belge_yazdir, name='belge_yazdir'),
     path('api/tedarikci-bakiye/<int:tedarikci_id>/', views.get_tedarikci_bakiye, name='api_tedarikci_bakiye'),
+    path("ekstre/stok/", stok_ekstresi, name="stok_ekstresi"),
+    path("ekstre/cari/", cari_ekstresi, name="cari_ekstresi"),
     
     # 9. Oturum
     path('cikis/', views.cikis_yap, name='cikis_yap'),

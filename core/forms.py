@@ -1,9 +1,32 @@
 from django import forms
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
+
 from .models import (
-    DepoTransfer, Depo, Teklif, Malzeme, 
+    DepoTransfer, Depo, Teklif, Malzeme,
     IsKalemi, Tedarikci, MalzemeTalep, KDV_ORANLARI, Fatura, Hakedis, Odeme, Kategori
 )
+
+# --------------------------------------------------------
+# Yardımcı: virgül/nokta uyumlu güvenli Decimal çevirici
+# --------------------------------------------------------
+def to_decimal(val, default="0"):
+    if val is None or val == "":
+        return Decimal(str(default))
+    if isinstance(val, Decimal):
+        return val
+    if isinstance(val, (int, float)):
+        return Decimal(str(val))
+    if isinstance(val, str):
+        v = val.strip().replace(" ", "").replace(",", ".")
+        try:
+            return Decimal(v)
+        except InvalidOperation:
+            return Decimal(str(default))
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return Decimal(str(default))
+
 
 # ========================================================
 # 0. KATEGORİ (İMALAT TÜRÜ) FORMU
@@ -14,8 +37,13 @@ class KategoriForm(forms.ModelForm):
         model = Kategori
         fields = ['isim']
         widgets = {
-            'isim': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: Kaba İnşaat, İnce İşler...', 'aria-label': 'Kategori Adı'}),
+            'isim': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Örn: Kaba İnşaat, İnce İşler...',
+                'aria-label': 'Kategori Adı'
+            }),
         }
+
 
 # ========================================================
 # 1. DEPO TRANSFER FORMU
@@ -35,17 +63,17 @@ class DepoTransferForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
-        super(DepoTransferForm, self).__init__(*args, **kwargs)
-        
+        super().__init__(*args, **kwargs)
+
         try:
             sanal_depo = Depo.objects.filter(is_sanal=True).first()
             fiziksel_depo = Depo.objects.filter(is_sanal=False).first()
-            
+
             if sanal_depo and not self.initial.get('kaynak_depo'):
                 self.fields['kaynak_depo'].initial = sanal_depo
             if fiziksel_depo and not self.initial.get('hedef_depo'):
                 self.fields['hedef_depo'].initial = fiziksel_depo
-        except:
+        except Exception:
             pass
 
     def clean(self):
@@ -70,8 +98,9 @@ class DepoTransferForm(forms.ModelForm):
                 )
         except AttributeError:
             pass
-            
+
         return cleaned_data
+
 
 # ========================================================
 # 2. TEKLİF GİRİŞ FORMU
@@ -79,8 +108,8 @@ class DepoTransferForm(forms.ModelForm):
 
 class TeklifForm(forms.ModelForm):
     kdv_orani_secimi = forms.ChoiceField(
-        choices=[('', 'Seçiniz...')] + list(KDV_ORANLARI), 
-        label="KDV Oranı", 
+        choices=[('', 'Seçiniz...')] + list(KDV_ORANLARI),
+        label="KDV Oranı",
         required=True,
         widget=forms.Select(attrs={'class': 'form-select', 'aria-label': 'KDV Oranı'})
     )
@@ -88,14 +117,14 @@ class TeklifForm(forms.ModelForm):
     class Meta:
         model = Teklif
         fields = [
-            'talep', # Bu alan initial veriyi yakalamak için listeye eklendi
-            'tedarikci', 
+            'talep',
+            'tedarikci',
             'malzeme', 'is_kalemi',
-            'miktar', 'birim_fiyat', 'para_birimi', 
+            'miktar', 'birim_fiyat', 'para_birimi',
             'kdv_dahil_mi', 'teklif_dosyasi'
         ]
         widgets = {
-            'talep': forms.HiddenInput(), # Ekranda görünmesin ama veriyi taşısın
+            'talep': forms.HiddenInput(),
             'tedarikci': forms.Select(attrs={'class': 'form-select select2'}),
             'malzeme': forms.Select(attrs={'class': 'form-select'}),
             'is_kalemi': forms.Select(attrs={'class': 'form-select'}),
@@ -117,6 +146,23 @@ class TeklifForm(forms.ModelForm):
             raise forms.ValidationError("Hem malzeme hem hizmet seçemezsiniz. Sadece birini seçin.")
         return cleaned_data
 
+    # ✅ KDV seçim alanını model alanına yaz
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+
+        secim = self.cleaned_data.get("kdv_orani_secimi")
+        if secim not in (None, ""):
+            try:
+                instance.kdv_orani = int(secim)
+            except (TypeError, ValueError):
+                pass
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
 # ========================================================
 # 3. TANIMLAMA FORMLARI
 # ========================================================
@@ -124,13 +170,14 @@ class TeklifForm(forms.ModelForm):
 class DepoForm(forms.ModelForm):
     class Meta:
         model = Depo
-        fields = ['isim', 'adres', 'is_sanal', 'is_kullanim_yeri'] # Buraya eklendi
+        fields = ['isim', 'adres', 'is_sanal', 'is_kullanim_yeri']
         widgets = {
             'isim': forms.TextInput(attrs={'class': 'form-control'}),
             'adres': forms.TextInput(attrs={'class': 'form-control'}),
             'is_sanal': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'is_kullanim_yeri': forms.CheckboxInput(attrs={'class': 'form-check-input'}), # Buraya eklendi
+            'is_kullanim_yeri': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+
 
 class TedarikciForm(forms.ModelForm):
     class Meta:
@@ -142,6 +189,7 @@ class TedarikciForm(forms.ModelForm):
             'telefon': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '05XX XXX XX XX', 'aria-label': 'Telefon'}),
             'adres': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'aria-label': 'Adres'}),
         }
+
 
 class MalzemeForm(forms.ModelForm):
     class Meta:
@@ -156,6 +204,7 @@ class MalzemeForm(forms.ModelForm):
             'kritik_stok': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '10', 'aria-label': 'Kritik Stok'}),
             'aciklama': forms.Textarea(attrs={'class': 'form-control', 'rows': 2, 'placeholder': 'Açıklama...', 'aria-label': 'Açıklama'}),
         }
+
 
 # ========================================================
 # 4. TALEP FORMLARI
@@ -185,6 +234,7 @@ class TalepForm(forms.ModelForm):
             raise forms.ValidationError("İkisini aynı anda seçemezsiniz.")
         return cleaned_data
 
+
 class IsKalemiForm(forms.ModelForm):
     class Meta:
         model = IsKalemi
@@ -198,23 +248,73 @@ class IsKalemiForm(forms.ModelForm):
             'aciklama': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Detay...', 'aria-label': 'Açıklama'}),
         }
 
+
+# ========================================================
+# 5. FATURA GİRİŞ FORMU (tutar otomatik + DB’ye garanti yazar)
+# ========================================================
+
 class FaturaGirisForm(forms.ModelForm):
     class Meta:
         model = Fatura
         fields = ['fatura_no', 'tarih', 'depo', 'miktar', 'tutar', 'dosya']
         widgets = {
-            'fatura_no': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Fatura No', 'aria-label': 'Fatura No'}),
-            'tarih': forms.DateInput(attrs={'class': 'form-control', 'type': 'date', 'aria-label': 'Fatura Tarihi'}),
-            'depo': forms.Select(attrs={'class': 'form-select', 'aria-label': 'Depo'}),
-            'miktar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'aria-label': 'Miktar'}),
-            'tutar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'aria-label': 'Tutar'}),
-            'dosya': forms.FileInput(attrs={'class': 'form-control', 'aria-label': 'Dosya'}),
+            'fatura_no': forms.TextInput(attrs={'class': 'form-control'}),
+            'tarih': forms.DateInput(attrs={'class': 'form-control', 'type': 'date'}),
+            'depo': forms.Select(attrs={'class': 'form-select'}),
+            'miktar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
+            'tutar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'readonly': True}),
+            'dosya': forms.FileInput(attrs={'class': 'form-control'}),
         }
-    
-    def __init__(self, *args, **kwargs):
-        super(FaturaGirisForm, self).__init__(*args, **kwargs)
-        self.fields['depo'].required = True
-        self.fields['depo'].empty_label = "Depo Seçiniz (Zorunlu)"
+
+    def __init__(self, *args, satinalma=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._satinalma = satinalma
+
+        # kullanıcı yazmasın (disabled => POST'a gelmez)
+        self.fields['tutar'].disabled = False
+        self.fields['tutar'].required = False
+
+        # ekranda gösterim amaçlı initial hesapla
+        if self._satinalma:
+            miktar = self.data.get("miktar") or self.initial.get("miktar") or 0
+            self.fields["tutar"].initial = self._hesapla_tutar(miktar)
+
+    def _hesapla_tutar(self, miktar):
+        teklif = self._satinalma.teklif
+
+        miktar = to_decimal(miktar or 0)
+        birim_fiyat = to_decimal(getattr(teklif, "birim_fiyat", None) or 0)
+        kur = to_decimal(getattr(teklif, "kur_degeri", None) or 1)
+
+        tutar = birim_fiyat * miktar * kur
+
+        if not getattr(teklif, "kdv_dahil_mi", False):
+            kdv_orani = to_decimal(getattr(teklif, "kdv_orani", None) or 0)
+            tutar = tutar * (Decimal("1") + (kdv_orani / Decimal("100")))
+
+        return tutar.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def save(self, commit=True):
+        """
+        KRİTİK: tutar field'i disabled => POST'ta yok.
+        O yüzden her durumda burada hesaplayıp instance.tutar'a yazıyoruz.
+        """
+        instance = super().save(commit=False)
+
+        if not self._satinalma:
+            raise forms.ValidationError("Satınalma bağlamı olmadan fatura kaydedilemez.")
+
+        instance.tutar = self._hesapla_tutar(instance.miktar)
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
+# ========================================================
+# 6. HAKEDİŞ / ÖDEME
+# ========================================================
 
 class HakedisForm(forms.ModelForm):
     class Meta:
@@ -229,15 +329,14 @@ class HakedisForm(forms.ModelForm):
             'aciklama': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'aria-label': 'Açıklama'}),
         }
 
+
 class OdemeForm(forms.ModelForm):
-    # ÇÖZÜM: Tutar alanını CharField olarak tanımlıyoruz ki virgül kabul etsin.
     tutar = forms.CharField(
         label="Tutar",
         widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '0,00', 'aria-label': 'Tutar'}),
         required=True
     )
-    
-    # Zorunlu olmayan alanlar
+
     banka_adi = forms.CharField(required=False, widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Banka adı...', 'aria-label': 'Banka Adı'}))
     cek_no = forms.CharField(required=False, widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Çek No...', 'aria-label': 'Çek No'}))
     vade_tarihi = forms.DateField(required=False, widget=forms.DateInput(attrs={'class': 'form-control', 'type': 'date', 'aria-label': 'Vade Tarihi'}))
@@ -253,17 +352,13 @@ class OdemeForm(forms.ModelForm):
             'para_birimi': forms.Select(attrs={'class': 'form-select', 'aria-label': 'Para Birimi'}),
         }
 
-    # "Sayı Girin" hatasını çözen kısım:
     def clean_tutar(self):
         tutar = self.cleaned_data.get('tutar')
         if tutar:
-            # Gelen string değerdeki virgülü noktaya çeviriyoruz
             if isinstance(tutar, str):
                 tutar = tutar.replace(',', '.')
-            
             try:
-                # Sayıya çevirmeyi deniyoruz
                 return Decimal(tutar)
-            except:
+            except Exception:
                 raise forms.ValidationError("Lütfen geçerli bir sayı giriniz.")
         return Decimal('0')

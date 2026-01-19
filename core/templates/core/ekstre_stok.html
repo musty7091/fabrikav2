@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% load humanize %}
+
+{% block title %}Stok Ekstresi{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <h3 class="mb-1 fw-bold">Stok Ekstresi</h3>
+      <div class="text-muted small">Malzeme / depo bazında stok hareket dökümü</div>
+    </div>
+  </div>
+
+  <!-- Filtre Kartı -->
+  <div class="table-card mb-3">
+    <form method="get" class="row g-3 align-items-end">
+
+      <div class="col-12 col-md-4">
+        <label class="form-label fw-semibold">Malzeme</label>
+        <select name="malzeme" class="form-select">
+          <option value="">Tümü</option>
+          {% for m in malzemeler %}
+            <option value="{{ m.id }}" {% if request.GET.malzeme == m.id|stringformat:"s" %}selected{% endif %}>
+              {{ m.isim }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12 col-md-3">
+        <label class="form-label fw-semibold">Depo</label>
+        <select name="depo" class="form-select">
+          <option value="">Tümü</option>
+          {% for d in depolar %}
+            <option value="{{ d.id }}" {% if request.GET.depo == d.id|stringformat:"s" %}selected{% endif %}>
+              {{ d.isim }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">İşlem</label>
+        <select name="tur" class="form-select">
+          <option value="">Tümü</option>
+          <option value="giris" {% if request.GET.tur == "giris" %}selected{% endif %}>Giriş</option>
+          <option value="cikis" {% if request.GET.tur == "cikis" %}selected{% endif %}>Çıkış</option>
+          <option value="iade"  {% if request.GET.tur == "iade" %}selected{% endif %}>İade</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <label class="form-label fw-semibold">Belge Tipi</label>
+        <select name="ref_type" class="form-select">
+          <option value="">Tümü</option>
+          <option value="TRANSFER" {% if request.GET.ref_type == "TRANSFER" %}selected{% endif %}>TRANSFER</option>
+          <option value="FATURA"   {% if request.GET.ref_type == "FATURA" %}selected{% endif %}>FATURA</option>
+          <option value="MANUEL"   {% if request.GET.ref_type == "MANUEL" %}selected{% endif %}>MANUEL</option>
+          <option value="IADE"     {% if request.GET.ref_type == "IADE" %}selected{% endif %}>IADE</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <label class="form-label fw-semibold">Başlangıç</label>
+        <input type="date" name="d1" value="{{ request.GET.d1 }}" class="form-control">
+      </div>
+
+      <div class="col-6 col-md-3">
+        <label class="form-label fw-semibold">Bitiş</label>
+        <input type="date" name="d2" value="{{ request.GET.d2 }}" class="form-control">
+      </div>
+
+      <div class="col-12 col-md-6 d-flex gap-2 justify-content-md-end">
+        <a href="{% url 'stok_ekstresi' %}" class="btn btn-outline-secondary">
+          <i class="fa-solid fa-rotate-left me-1"></i> Temizle
+        </a>
+        <button class="btn btn-primary">
+          <i class="fa-solid fa-magnifying-glass me-1"></i> Filtrele
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Özet KPI -->
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+      <div class="table-card">
+        <div class="text-muted small">Toplam Giriş</div>
+        <div class="fs-4 fw-bold">{{ ozet.toplam_giris|floatformat:2 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="table-card">
+        <div class="text-muted small">Toplam Çıkış</div>
+        <div class="fs-4 fw-bold">{{ ozet.toplam_cikis|floatformat:2 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="table-card">
+        <div class="text-muted small">Toplam İade</div>
+        <div class="fs-4 fw-bold">{{ ozet.toplam_iade|floatformat:2 }}</div>
+      </div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="table-card">
+        <div class="text-muted small">Net Etki</div>
+        <div class="fs-4 fw-bold">{{ ozet.net|floatformat:2 }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ekstre Tablosu -->
+  <div class="table-card">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <div class="fw-bold">Hareketler</div>
+      <div class="text-muted small">Son 500 kayıt gösterilir</div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th style="white-space:nowrap;">Tarih</th>
+            <th>Belge</th>
+            <th>Ref</th>
+            <th>Malzeme</th>
+            <th>Depo</th>
+            <th>Açıklama</th>
+            <th class="text-end">Giriş</th>
+            <th class="text-end">Çıkış</th>
+            <th class="text-end">İade</th>
+            <th class="text-end">Net</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in hareketler %}
+          <tr>
+            <td style="white-space:nowrap;">{{ h.tarih|date:"d.m.Y" }}</td>
+
+            <td>
+              {% if h.ref_type %}
+                <span class="badge text-bg-secondary">{{ h.ref_type }}</span>
+              {% else %}
+                <span class="badge text-bg-light text-muted">-</span>
+              {% endif %}
+            </td>
+
+            <td class="text-muted">
+              {% if h.ref_id %}#{{ h.ref_id }}{% else %}-{% endif %}
+              {% if h.ref_direction %}
+                <span class="ms-1 badge text-bg-light text-muted">{{ h.ref_direction }}</span>
+              {% endif %}
+            </td>
+
+            <td class="fw-semibold">{{ h.malzeme.isim }}</td>
+            <td>{{ h.depo.isim|default:"-" }}</td>
+            <td class="text-muted">{{ h.aciklama|default:"" }}</td>
+
+            <td class="text-end">
+              {% if h.islem_turu == "giris" %}
+                <span class="fw-semibold text-success">{{ h.miktar|floatformat:2 }}</span>
+              {% else %}-{% endif %}
+            </td>
+            <td class="text-end">
+              {% if h.islem_turu == "cikis" %}
+                <span class="fw-semibold text-danger">{{ h.miktar|floatformat:2 }}</span>
+              {% else %}-{% endif %}
+            </td>
+            <td class="text-end">
+              {% if h.islem_turu == "iade" %}
+                <span class="fw-semibold text-warning">{{ h.miktar|floatformat:2 }}</span>
+              {% else %}-{% endif %}
+            </td>
+
+            <td class="text-end">
+              {% if h.islem_turu == "giris" %}
+                <span class="fw-semibold text-success">+{{ h.miktar|floatformat:2 }}</span>
+              {% elif h.islem_turu == "cikis" %}
+                <span class="fw-semibold text-danger">-{{ h.miktar|floatformat:2 }}</span>
+              {% else %}
+                <span class="fw-semibold text-warning">-{{ h.miktar|floatformat:2 }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-4">
+              Kayıt bulunamadı.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
