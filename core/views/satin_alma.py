@@ -3,7 +3,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django import forms
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import F
 
 from core.models import SatinAlma, Depo, DepoHareket, Fatura, DepoTransfer

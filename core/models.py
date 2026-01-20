@@ -5,7 +5,6 @@ from django.db.models import Sum, Q, F
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
-
 from core.utils import to_decimal
 
 # ==========================================
@@ -112,7 +111,6 @@ class Depo(models.Model):
         - boolean -> depo_tipi’ni doğruya çeker
         Çift anlam/çelişki kalmaz.
         """
-
         # 1) Eğer boolean’lar set edildiyse depo_tipi’ni zorla
         if self.is_kullanim_yeri:
             self.depo_tipi = "CONSUMPTION"
@@ -168,7 +166,6 @@ class Malzeme(models.Model):
     @property
     def stok(self):
         """
-        Mevcut mantık korunur.
         NOT: Burada stok, "kullanım yeri" depoları hariç tutulur.
         Vendor Location stokları dahil olur (istenirse rapor tarafında ayrıca ayrıştırılır).
         """
@@ -461,7 +458,8 @@ class DepoHareket(models.Model):
 
     REF_TIPLERI = [
         ("TRANSFER", "Depo Transfer"),
-        ("FATURA", "Fatura"),
+        ("FATURA", "Fatura (eski/başlık)"),
+        ("FATURA_KALEM", "Fatura Kalemi"),
         ("MANUEL", "Manuel"),
         ("IADE", "İade"),
     ]
@@ -558,28 +556,34 @@ class Hakedis(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):
-        if not hasattr(self, 'satinalma_id') or not self.satinalma_id:
+        if not self.satinalma_id:
             return
 
-        try:
-            toplam_onceki = Hakedis.objects.filter(satinalma_id=self.satinalma_id).exclude(pk=self.pk).aggregate(
-                toplam=models.Sum('tamamlanma_orani'))['toplam'] or Decimal('0')
+        toplam_onceki = (
+            Hakedis.objects
+            .filter(satinalma_id=self.satinalma_id)
+            .exclude(pk=self.pk)
+            .aggregate(toplam=models.Sum('tamamlanma_orani'))["toplam"]
+            or Decimal("0")
+        )
 
-            yeni_toplam = toplam_onceki + to_decimal(self.tamamlanma_orani)
+        yeni_toplam = to_decimal(toplam_onceki) + to_decimal(self.tamamlanma_orani)
 
-            if yeni_toplam > Decimal('100.00'):
-                kalan = Decimal('100.00') - toplam_onceki
-                raise ValidationError(f"Hata: Toplam ilerleme %100'ü geçemez! Kalan maksimum oran: %{kalan}")
-        except Exception:
-            pass
+        if yeni_toplam > Decimal("100.00"):
+            kalan = (Decimal("100.00") - to_decimal(toplam_onceki)).quantize(Decimal("0.01"))
+            if kalan < 0:
+                kalan = Decimal("0.00")
+            raise ValidationError({
+                "tamamlanma_orani": f"Toplam ilerleme %100'ü geçemez! Kalan maksimum oran: %{kalan}"
+            })
 
     def save(self, *args, **kwargs):
-        try:
-            self.full_clean()
-        except ValidationError:
-            pass
+        with transaction.atomic():
+            if self.satinalma_id:
+                SatinAlma.objects.select_for_update().filter(pk=self.satinalma_id).first()
 
-        if hasattr(self, 'satinalma_id') and self.satinalma_id:
+            self.full_clean()
+
             try:
                 teklif = self.satinalma.teklif
                 islem_kuru = to_decimal(teklif.kur_degeri or 1)
@@ -590,29 +594,38 @@ class Hakedis(models.Model):
                 birim_fiyat = to_decimal(teklif.birim_fiyat)
                 if teklif.kdv_dahil_mi:
                     kdv_payi = to_decimal(teklif.kdv_orani)
-                    birim_fiyat = birim_fiyat / (Decimal('1.0') + (kdv_payi / Decimal('100.0')))
+                    birim_fiyat = birim_fiyat / (Decimal("1.0") + (kdv_payi / Decimal("100.0")))
 
                 miktar = to_decimal(self.satinalma.toplam_miktar)
                 sozlesme_toplam_tl = birim_fiyat * miktar * islem_kuru
 
                 oran = to_decimal(self.tamamlanma_orani or 0)
-                self.brut_tutar = (sozlesme_toplam_tl * (oran / Decimal('100.0'))).quantize(Decimal('0.01'))
+                self.brut_tutar = (sozlesme_toplam_tl * (oran / Decimal("100.0"))).quantize(Decimal("0.01"))
 
                 kdv_orani = to_decimal(self.kdv_orani or 0)
-                self.kdv_tutari = (self.brut_tutar * (kdv_orani / Decimal('100.0'))).quantize(Decimal('0.01'))
+                self.kdv_tutari = (self.brut_tutar * (kdv_orani / Decimal("100.0"))).quantize(Decimal("0.01"))
 
-                self.stopaj_tutari = (self.brut_tutar * (to_decimal(self.stopaj_orani or 0) / Decimal('100.0'))).quantize(Decimal('0.01'))
-                self.teminat_tutari = (self.brut_tutar * (to_decimal(self.teminat_orani or 0) / Decimal('100.0'))).quantize(Decimal('0.01'))
+                self.stopaj_tutari = (
+                    self.brut_tutar * (to_decimal(self.stopaj_orani or 0) / Decimal("100.0"))
+                ).quantize(Decimal("0.01"))
+                self.teminat_tutari = (
+                    self.brut_tutar * (to_decimal(self.teminat_orani or 0) / Decimal("100.0"))
+                ).quantize(Decimal("0.01"))
 
                 toplam_alacak = self.brut_tutar + self.kdv_tutari
-                toplam_kesinti = self.stopaj_tutari + self.teminat_tutari + to_decimal(self.avans_kesintisi) + to_decimal(self.diger_kesintiler)
+                toplam_kesinti = (
+                    self.stopaj_tutari
+                    + self.teminat_tutari
+                    + to_decimal(self.avans_kesintisi)
+                    + to_decimal(self.diger_kesintiler)
+                )
 
-                self.odenecek_net_tutar = (toplam_alacak - toplam_kesinti).quantize(Decimal('0.01'))
+                self.odenecek_net_tutar = (toplam_alacak - toplam_kesinti).quantize(Decimal("0.01"))
 
             except Exception:
                 pass
 
-        super(Hakedis, self).save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Hakediş #{self.hakedis_no}"
@@ -622,67 +635,43 @@ class Hakedis(models.Model):
         ordering = ['-tarih']
 
 
+# ==========================================
+# 11. ALIŞ FATURASI (YENİ: BAŞLIK + KALEM)
+# ==========================================
+
 class Fatura(models.Model):
-    satinalma = models.ForeignKey(SatinAlma, on_delete=models.CASCADE, related_name='faturalar', verbose_name="İlgili Sipariş")
+    """
+    1 Fatura = 1 Tedarikçi
+    Çok kalemli yapı: FaturaKalem satırları üzerinden ilerler.
+    """
+    tedarikci = models.ForeignKey(Tedarikci, on_delete=models.PROTECT, related_name='faturalar', verbose_name="Tedarikçi")
 
     fatura_no = models.CharField(max_length=50, verbose_name="Fatura No")
     tarih = models.DateField(default=timezone.now, verbose_name="Fatura Tarihi")
 
-    miktar = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Fatura Edilen Miktar")
-    tutar = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Fatura Tutarı (KDV Dahil)")
-
-    depo = models.ForeignKey(Depo, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Giriş Yapılacak Depo")
-
     dosya = models.FileField(upload_to='faturalar/', blank=True, null=True, verbose_name="Fatura Görseli/PDF")
+    aciklama = models.TextField(blank=True, verbose_name="Açıklama")
+
+    # Toplamlar (kalemlerden toplanır)
+    ara_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Ara Toplam (KDV Hariç)")
+    kdv_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="KDV Toplam")
+    genel_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Genel Toplam (KDV Dahil)")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def save(self, *args, **kwargs):
-    
-        is_new = self.pk is None
-
-        with transaction.atomic():
-            super(Fatura, self).save(*args, **kwargs)
-
-            if not is_new:
-                return
-
-            # 1) Finansal güncelleme (atomic + F ile)
-            SatinAlma.objects.filter(pk=self.satinalma_id).update(
-                faturalanan_miktar=F("faturalanan_miktar") + self.miktar
-            )
-
-            # 2) Fiziksel stok güncelleme (malzeme ise)
-            if self.depo and self.satinalma.teklif.malzeme:
-                hareket, created = DepoHareket.objects.get_or_create(
-                    ref_type="FATURA",
-                    ref_id=self.id,
-                    ref_direction="IN",
-                    malzeme=self.satinalma.teklif.malzeme,
-                    depo=self.depo,
-                    defaults=dict(
-                        siparis=self.satinalma,
-                        tarih=self.tarih,
-                        islem_turu="giris",
-                        miktar=self.miktar,
-                        tedarikci=self.satinalma.teklif.tedarikci,
-                        irsaliye_no=self.fatura_no,
-                        aciklama=f"Fatura #{self.fatura_no} ile otomatik giriş",
-                    ),
-                )
-
-                # Sadece hareket gerçekten yeni yazıldıysa teslimi arttır
-                if created:
-                    SatinAlma.objects.filter(pk=self.satinalma_id).update(
-                        teslim_edilen=F("teslim_edilen") + self.miktar
-                    )
-
-            # Teslimat durumu güncellensin
-            self.satinalma.refresh_from_db()
-            self.satinalma.save()
+    def recalc_totals(self):
+        sums = self.kalemler.aggregate(
+            ara=Sum("satir_ara_toplam"),
+            kdv=Sum("satir_kdv"),
+            genel=Sum("satir_genel_toplam"),
+        )
+        self.ara_toplam = sums["ara"] or Decimal("0.00")
+        self.kdv_toplam = sums["kdv"] or Decimal("0.00")
+        self.genel_toplam = sums["genel"] or Decimal("0.00")
 
     def __str__(self):
         try:
-            ted_adi = self.satinalma.teklif.tedarikci.firma_unvani
+            ted_adi = self.tedarikci.firma_unvani
         except Exception:
             ted_adi = "Bilinmeyen"
         return f"Fatura #{self.fatura_no} - {ted_adi}"
@@ -690,7 +679,71 @@ class Fatura(models.Model):
     class Meta:
         verbose_name = "Alış Faturası"
         verbose_name_plural = "Alış Faturaları"
+        ordering = ["-tarih", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tedarikci", "fatura_no", "tarih"],
+                name="uniq_fatura_tedarikci_no_tarih",
+            )
+        ]
 
+
+class FaturaKalem(models.Model):
+    """
+    Fatura satırları (çok kalem)
+    Not: Stok/finans etkilerini model save içine GÖMMÜYORUZ.
+    Bunun için bir sonraki adımda servis yazacağız (transaction.atomic).
+    """
+    fatura = models.ForeignKey(Fatura, on_delete=models.CASCADE, related_name="kalemler", verbose_name="Fatura")
+    malzeme = models.ForeignKey(Malzeme, on_delete=models.PROTECT, related_name="fatura_kalemleri", verbose_name="Malzeme")
+
+    miktar = models.DecimalField(max_digits=15, decimal_places=3, default=0, verbose_name="Miktar")
+    birim_fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat (KDV Hariç)")
+    kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
+
+    satir_ara_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Satır Ara Toplam")
+    satir_kdv = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Satır KDV")
+    satir_genel_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Satır Genel Toplam")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.miktar is None or self.miktar <= 0:
+            raise ValidationError({"miktar": "Miktar 0'dan büyük olmalı."})
+        if self.birim_fiyat is None or self.birim_fiyat < 0:
+            raise ValidationError({"birim_fiyat": "Birim fiyat negatif olamaz."})
+
+    def recalc(self):
+        kdv = Decimal("0") if self.kdv_orani == -1 else Decimal(str(self.kdv_orani))
+        ara = (to_decimal(self.miktar) * to_decimal(self.birim_fiyat)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        kdv_tutar = (ara * (kdv / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        genel = (ara + kdv_tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        self.satir_ara_toplam = ara
+        self.satir_kdv = kdv_tutar
+        self.satir_genel_toplam = genel
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        self.recalc()
+        super().save(*args, **kwargs)
+
+        # Kalem kaydı sonrası fatura toplamları güncel kalsın
+        self.fatura.recalc_totals()
+        self.fatura.save(update_fields=["ara_toplam", "kdv_toplam", "genel_toplam"])
+
+    def __str__(self):
+        return f"{self.malzeme} x {self.miktar}"
+
+    class Meta:
+        verbose_name = "Alış Faturası Kalemi"
+        verbose_name_plural = "Alış Faturası Kalemleri"
+        ordering = ["id"]
+
+
+# ==========================================
+# 12. ÖDEME
+# ==========================================
 
 class Odeme(models.Model):
     ODEME_TURLERI = [

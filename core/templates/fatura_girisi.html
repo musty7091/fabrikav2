@@ -1,97 +1,140 @@
 {% extends 'base.html' %}
-
 {% block title %}Fatura Girişi{% endblock %}
 
 {% block content %}
 <div class="container py-5">
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="card shadow border-0">
-                <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0 fw-bold"><i class="fas fa-file-invoice me-2"></i> ALIŞ FATURASI GİRİŞİ</h5>
-                    <span class="badge bg-warning text-dark">Sipariş #{{ siparis.id }}</span>
-                </div>
-                <div class="card-body p-4">
-                    
-                    <div class="alert alert-secondary d-flex">
-                        <div class="me-4 text-center">
-                            <i class="fas fa-truck fa-2x text-muted"></i>
-                        </div>
-                        <div>
-                            <h6 class="fw-bold mb-1">{{ siparis.teklif.tedarikci.firma_unvani }}</h6>
-                            <small class="d-block">Ürün: 
-                                <strong>
-                                    {% if siparis.teklif.malzeme %}
-                                        {{ siparis.teklif.malzeme.isim }}
-                                    {% elif siparis.teklif.is_kalemi %}
-                                        {{ siparis.teklif.is_kalemi.isim }}
-                                    {% else %}
-                                        Tanımsız
-                                    {% endif %}
-                                </strong>
-                            </small>
-                            <small class="d-block">
-                                Bekleyen Fatura Miktarı: <strong>{{ siparis.kalan_fatura_miktar }}</strong>
-                            </small>
-                        </div>
-                    </div>
-
-                    <form method="post" enctype="multipart/form-data">
-                        {% csrf_token %}
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">Fatura No</label>
-                                {{ form.fatura_no }}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">Fatura Tarihi</label>
-                                {{ form.tarih }}
-                            </div>
-                        </div>
-
-                        <hr class="my-4 text-muted">
-
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold text-primary">Fatura Miktarı</label>
-                                {{ form.miktar }}
-                                <div class="form-text">Bu miktar <b>Sanal Stok</b> olarak eklenecektir.</div>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold text-success">Fatura Tutarı (KDV Dahil)</label>
-                                {{ form.tutar }}
-                            </div>
-                        </div>
-
-                        <div class="mb-4 p-3 bg-white border rounded">
-                            <label class="form-label fw-bold"><i class="fas fa-warehouse me-1"></i> Giriş Yapılacak Yer</label>
-                            
-                            <input type="text" class="form-control bg-light" value="Tedarikçi / Sanal Depo (Otomatik)" disabled readonly>
-                            
-                            <input type="hidden" name="depo" value="{{ sanal_depo.id }}">
-
-                            <div class="form-text text-danger mt-2">
-                                <i class="fas fa-exclamation-circle"></i> Fatura girildiğinde malın mülkiyeti bize geçer ancak fiziksel olarak gelmediği varsayılır. Bu yüzden stok <b>Sanal Depo</b>'ya işlenir.
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Fatura Görseli (Opsiyonel)</label>
-                            {{ form.dosya }}
-                        </div>
-
-                        <div class="d-grid gap-2 mt-4">
-                            <button type="submit" class="btn btn-success btn-lg fw-bold">
-                                <i class="fas fa-save me-2"></i> FATURAYI KAYDET
-                            </button>
-                            <a href="{% url 'siparis_listesi' %}" class="btn btn-outline-secondary">İptal</a>
-                        </div>
-                    </form>
-
-                </div>
-            </div>
+  <div class="row justify-content-center">
+    <div class="col-lg-10">
+      <div class="card shadow border-0">
+        <div class="card-header bg-dark text-white py-3 d-flex justify-content-between align-items-center">
+          <h5 class="mb-0 fw-bold">
+            <i class="fas fa-file-invoice me-2"></i> ALIŞ FATURASI GİRİŞİ (ÇOK KALEM)
+          </h5>
+          <span class="badge bg-warning text-dark">
+            Sipariş #{{ siparis.id }} — {{ siparis.teklif.tedarikci.firma_unvani }}
+          </span>
         </div>
+
+        <div class="card-body p-4">
+
+          <div class="alert alert-secondary d-flex">
+            <div class="me-4 text-center">
+              <i class="fas fa-truck fa-2x text-muted"></i>
+            </div>
+            <div class="w-100">
+              <h6 class="fw-bold mb-1">{{ siparis.teklif.tedarikci.firma_unvani }}</h6>
+              <small class="d-block">
+                Bu ekran aynı fatura içinde <b>birden fazla ürün</b> girebilir.
+                <br>
+                <span class="text-danger">
+                  (Kural) Tek fatura = tek tedarikçi ✅
+                </span>
+              </small>
+            </div>
+          </div>
+
+          <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+              <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="row mb-3">
+              <div class="col-md-4">
+                <label class="form-label fw-bold">Tedarikçi</label>
+                {{ form.tedarikci }}
+                <div class="form-text">Sipariş tedarikçisi ile aynı olmak zorunda.</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold">Fatura No</label>
+                {{ form.fatura_no }}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold">Fatura Tarihi</label>
+                {{ form.tarih }}
+              </div>
+            </div>
+
+            <div class="row mb-3">
+              <div class="col-md-8">
+                <label class="form-label fw-bold">Açıklama (Opsiyonel)</label>
+                {{ form.aciklama }}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-bold">Fatura Dosyası (Opsiyonel)</label>
+                {{ form.dosya }}
+              </div>
+            </div>
+
+            <hr class="my-4">
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <h6 class="fw-bold mb-0"><i class="fas fa-list me-2"></i>Fatura Kalemleri</h6>
+              <small class="text-muted">Satır eklemek için en altta boş satır var. (Kaydet dediğinde eklenir)</small>
+            </div>
+
+            {{ formset.management_form }}
+
+            {% if formset.non_form_errors %}
+              <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+            {% endif %}
+
+            <div class="table-responsive">
+              <table class="table table-bordered align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:40%">Malzeme</th>
+                    <th style="width:15%">Miktar</th>
+                    <th style="width:20%">Birim Fiyat (KDV Hariç)</th>
+                    <th style="width:10%">KDV</th>
+                    <th style="width:10%">Sil</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for f in formset.forms %}
+                    <tr>
+                      <td>
+                        {{ f.malzeme }}
+                        {% if f.malzeme.errors %}<div class="text-danger small">{{ f.malzeme.errors }}</div>{% endif %}
+                      </td>
+                      <td>
+                        {{ f.miktar }}
+                        {% if f.miktar.errors %}<div class="text-danger small">{{ f.miktar.errors }}</div>{% endif %}
+                      </td>
+                      <td>
+                        {{ f.birim_fiyat }}
+                        {% if f.birim_fiyat.errors %}<div class="text-danger small">{{ f.birim_fiyat.errors }}</div>{% endif %}
+                      </td>
+                      <td>
+                        {{ f.kdv_orani }}
+                        {% if f.kdv_orani.errors %}<div class="text-danger small">{{ f.kdv_orani.errors }}</div>{% endif %}
+                      </td>
+                      <td class="text-center">
+                        {% if f.instance.pk %}
+                          {{ f.DELETE }}
+                        {% else %}
+                          <span class="text-muted">—</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="d-grid gap-2 mt-4">
+              <button type="submit" class="btn btn-success btn-lg fw-bold">
+                <i class="fas fa-save me-2"></i> FATURAYI KAYDET
+              </button>
+              <a href="{% url 'siparis_listesi' %}" class="btn btn-outline-secondary">İptal</a>
+            </div>
+
+          </form>
+
+        </div>
+      </div>
     </div>
+  </div>
 </div>
 {% endblock %}

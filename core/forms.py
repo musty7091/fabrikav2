@@ -1,13 +1,17 @@
 from django import forms
+from django.forms import inlineformset_factory
+
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from .models import (
     DepoTransfer, Depo, Teklif, Malzeme,
-    IsKalemi, Tedarikci, MalzemeTalep, KDV_ORANLARI, Fatura, Hakedis, Odeme, Kategori
+    IsKalemi, Tedarikci, MalzemeTalep, KDV_ORANLARI,
+    Fatura, FaturaKalem, Hakedis, Odeme, Kategori
 )
 
 # --------------------------------------------------------
 # Yardımcı: virgül/nokta uyumlu güvenli Decimal çevirici
+# (forms içinde kullanıyoruz; modeldeki core.utils.to_decimal ile karışmasın diye local)
 # --------------------------------------------------------
 def to_decimal(val, default="0"):
     if val is None or val == "":
@@ -89,7 +93,7 @@ class DepoTransferForm(forms.ModelForm):
         if kaynak == hedef:
             raise forms.ValidationError("Kaynak ve Hedef depo aynı olamaz.")
 
-        # Eksi Stok Kontrolü
+        # Eksi stok kontrolü
         try:
             mevcut_stok = malzeme.depo_stogu(kaynak.id)
             if mevcut_stok < miktar:
@@ -146,7 +150,6 @@ class TeklifForm(forms.ModelForm):
             raise forms.ValidationError("Hem malzeme hem hizmet seçemezsiniz. Sadece birini seçin.")
         return cleaned_data
 
-    # ✅ KDV seçim alanını model alanına yaz
     def save(self, commit=True):
         instance = super().save(commit=False)
 
@@ -250,82 +253,78 @@ class IsKalemiForm(forms.ModelForm):
 
 
 # ========================================================
-# 5. FATURA GİRİŞ FORMU (tutar otomatik + DB’ye garanti yazar)
+# 5. FATURA (YENİ: BAŞLIK + KALEM FORMLARI)
 # ========================================================
 
 class FaturaGirisForm(forms.ModelForm):
     """
-    - tutar GİRİLEBİLİR (enabled)
-    - ekranda hesaplanmış initial gösterir
-    - kullanıcı boş bırakırsa server hesaplar
+    Yeni Fatura modeline uygun (tutar/miktar/depo yok).
     """
+
+    # Fatura modelinde depo alanı yok; stok hareketi üretmek için ekranda seçtiriyoruz.
+    depo = forms.ModelChoiceField(
+        queryset=Depo.objects.all(),
+        required=False,
+        label="Giriş Deposu",
+        widget=forms.Select(attrs={"class": "form-select", "aria-label": "Giriş Deposu"}),
+    )
     class Meta:
         model = Fatura
-        fields = ['fatura_no', 'tarih', 'depo', 'miktar', 'tutar', 'dosya']
+        fields = ["tedarikci", "fatura_no", "tarih", "dosya", "aciklama"]
         widgets = {
-            'fatura_no': forms.TextInput(attrs={'class': 'form-control'}),
-            'tarih': forms.DateInput(attrs={'class': 'form-controlqs', 'type': 'date'}),  # istersen class'ı form-control yap
-            'depo': forms.Select(attrs={'class': 'form-select'}),
-            'miktar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            # ✅ readonly/disabled YOK
-            'tutar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'dosya': forms.FileInput(attrs={'class': 'form-control'}),
+            "tedarikci": forms.Select(attrs={"class": "form-select select2", "aria-label": "Tedarikçi"}),
+            "fatura_no": forms.TextInput(attrs={"class": "form-control", "aria-label": "Fatura No"}),
+            "tarih": forms.DateInput(attrs={"class": "form-control", "type": "date", "aria-label": "Fatura Tarihi"}),
+            "dosya": forms.FileInput(attrs={"class": "form-control", "aria-label": "Fatura Dosyası"}),
+            "aciklama": forms.Textarea(attrs={"class": "form-control", "rows": 2, "aria-label": "Açıklama"}),
         }
 
-    def __init__(self, *args, satinalma=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._satinalma = satinalma
+        # Varsayılan: sanal depo varsa onu seç.
+        try:
+            if not (self.initial.get("depo") or self.data.get("depo")):
+                sanal = Depo.objects.filter(is_sanal=True).first()
+                if sanal:
+                    self.initial["depo"] = sanal
+        except Exception:
+            pass
 
-        # Depo ekranda “otomatik” gösteriliyorsa bile POST’a gitsin diye hidden render ediyorsun.
-        # Bu yüzden burada required'ı kapatıp view'de sanal depo kilitleyeceğiz.
-        self.fields['depo'].required = False
 
-        # Tutar normalde zorunlu, ama kullanıcı boş bırakırsa hesaplayacağımız için required False yapıyoruz.
-        self.fields['tutar'].required = False
+class FaturaKalemForm(forms.ModelForm):
+    """
+    Fatura satırları: malzeme + miktar + birim fiyat + kdv oranı
+    """
+    class Meta:
+        model = FaturaKalem
+        fields = ["malzeme", "miktar", "birim_fiyat", "kdv_orani"]
+        widgets = {
+            "malzeme": forms.Select(attrs={"class": "form-select select2", "aria-label": "Malzeme"}),
+            "miktar": forms.NumberInput(attrs={"class": "form-control", "step": "0.001", "aria-label": "Miktar"}),
+            "birim_fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.0001", "aria-label": "Birim Fiyat (KDV Hariç)"}),
+            "kdv_orani": forms.Select(attrs={"class": "form-select", "aria-label": "KDV Oranı"}),
+        }
 
-        # Initial tutar (gösterim amaçlı)
-        if self._satinalma:
-            miktar_val = self.data.get("miktar") or self.initial.get("miktar") or 0
-            self.initial['tutar'] = self._hesapla_tutar(miktar_val)
+    def clean_miktar(self):
+        miktar = self.cleaned_data.get("miktar")
+        if miktar is None or miktar <= 0:
+            raise forms.ValidationError("Miktar 0'dan büyük olmalı.")
+        return miktar
 
-    def _hesapla_tutar(self, miktar):
-        teklif = self._satinalma.teklif
+    def clean_birim_fiyat(self):
+        bf = self.cleaned_data.get("birim_fiyat")
+        if bf is None or bf < 0:
+            raise forms.ValidationError("Birim fiyat negatif olamaz.")
+        return bf
 
-        miktar = to_decimal(miktar, "0")
-        birim = to_decimal(getattr(teklif, "birim_fiyat", None), "0")
-        kur = to_decimal(getattr(teklif, "kur_degeri", None), "1")
 
-        kdv_orani = to_decimal(getattr(teklif, "kdv_orani", None), "0")
-        kdv_carpan = Decimal("1") + (kdv_orani / Decimal("100"))
-
-        # teklif.kdv_dahil_mi True ise birim zaten kdvli kabul
-        birim_kdvli = birim if getattr(teklif, "kdv_dahil_mi", False) else (birim * kdv_carpan)
-
-        return (birim_kdvli * miktar * kur).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    def clean_tutar(self):
-        val = self.cleaned_data.get("tutar")
-        if val in (None, ""):
-            return None
-        return to_decimal(val, "0").quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    def save(self, commit=True):
-        instance = super().save(commit=False)
-
-        if not self._satinalma:
-            raise forms.ValidationError("Satınalma bağlamı olmadan fatura kaydedilemez.")
-
-        # ✅ kullanıcı tutar girdiyse onu kullan, boşsa hesapla
-        girilen = self.cleaned_data.get("tutar", None)
-        if girilen is None:
-            instance.tutar = self._hesapla_tutar(instance.miktar)
-        else:
-            instance.tutar = girilen
-
-        if commit:
-            instance.save()
-            self.save_m2m()
-        return instance
+FaturaKalemFormSet = inlineformset_factory(
+    parent_model=Fatura,
+    model=FaturaKalem,
+    form=FaturaKalemForm,
+    extra=1,
+    can_delete=True,
+)
 
 
 # ========================================================
