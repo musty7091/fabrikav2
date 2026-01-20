@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from core import views
 from core.views.ekstre import stok_ekstresi, cari_ekstresi
+from core.views.finans import hizmet_faturasi_giris
 
 
 urlpatterns = [
