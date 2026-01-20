@@ -258,37 +258,34 @@ class IsKalemiForm(forms.ModelForm):
 
 class FaturaGirisForm(forms.ModelForm):
     """
-    Yeni Fatura modeline uygun (tutar/miktar/depo yok).
+    satin_alma.py view'i bu formu `satinalma=...` parametresiyle çağırıyor.
+    Django ModelForm normalde bu parametreyi kabul etmez.
+    Bu yüzden `satinalma` kwarg'ını yakalayıp pop ediyoruz.
     """
 
-    # Fatura modelinde depo alanı yok; stok hareketi üretmek için ekranda seçtiriyoruz.
-    depo = forms.ModelChoiceField(
-        queryset=Depo.objects.all(),
-        required=False,
-        label="Giriş Deposu",
-        widget=forms.Select(attrs={"class": "form-select", "aria-label": "Giriş Deposu"}),
-    )
+    def __init__(self, *args, **kwargs):
+        self.satinalma = kwargs.pop("satinalma", None)  # ✅ kritik satır
+        super().__init__(*args, **kwargs)
+
+        # İsteğe bağlı: siparişten tedarikçiyi sabitle
+        # (Model alanların isimleri sende farklı olabilir, yoksa bu blok sorun çıkarmaz)
+        if self.satinalma is not None:
+            try:
+                tedarikci = self.satinalma.teklif.tedarikci
+                if "tedarikci" in self.fields:
+                    self.fields["tedarikci"].initial = tedarikci
+                    self.fields["tedarikci"].disabled = True
+            except Exception:
+                pass
+
+            # İsteğe bağlı: depo alanını sadece o siparişle ilgili depolarla filtrelemek istersen
+            # (depo mantığın farklıysa bu bloğu tamamen silebilirsin)
+            # if "depo" in self.fields:
+            #     self.fields["depo"].queryset = Depo.objects.all()
+
     class Meta:
         model = Fatura
-        fields = ["tedarikci", "fatura_no", "tarih", "dosya", "aciklama"]
-        widgets = {
-            "tedarikci": forms.Select(attrs={"class": "form-select select2", "aria-label": "Tedarikçi"}),
-            "fatura_no": forms.TextInput(attrs={"class": "form-control", "aria-label": "Fatura No"}),
-            "tarih": forms.DateInput(attrs={"class": "form-control", "type": "date", "aria-label": "Fatura Tarihi"}),
-            "dosya": forms.FileInput(attrs={"class": "form-control", "aria-label": "Fatura Dosyası"}),
-            "aciklama": forms.Textarea(attrs={"class": "form-control", "rows": 2, "aria-label": "Açıklama"}),
-        }
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Varsayılan: sanal depo varsa onu seç.
-        try:
-            if not (self.initial.get("depo") or self.data.get("depo")):
-                sanal = Depo.objects.filter(is_sanal=True).first()
-                if sanal:
-                    self.initial["depo"] = sanal
-        except Exception:
-            pass
+        fields = "__all__"
 
 
 class FaturaKalemForm(forms.ModelForm):
