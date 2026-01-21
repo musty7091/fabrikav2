@@ -258,34 +258,83 @@ class IsKalemiForm(forms.ModelForm):
 
 class FaturaGirisForm(forms.ModelForm):
     """
-    satin_alma.py view'i bu formu `satinalma=...` parametresiyle çağırıyor.
-    Django ModelForm normalde bu parametreyi kabul etmez.
-    Bu yüzden `satinalma` kwarg'ını yakalayıp pop ediyoruz.
+    Çok kalem fatura giriş formu.
+
+    - View bu formu `satinalma=...` parametresiyle çağırdığı için bu kwarg kabul edilir.
+    - Tedarikçi ekranda kilitli (disabled) olduğunda POST'a gelmez; bu yüzden tedarikçiyi
+      satinalma üzerinden server-side kesinleştiririz.
+    - ara_toplam / kdv_toplam / genel_toplam kullanıcı girişi değil, kalemlerden hesaplanır;
+      bu yüzden formdan çıkarılır.
     """
 
     def __init__(self, *args, **kwargs):
-        self.satinalma = kwargs.pop("satinalma", None)  # ✅ kritik satır
+        self.satinalma = kwargs.pop("satinalma", None)
         super().__init__(*args, **kwargs)
 
-        # İsteğe bağlı: siparişten tedarikçiyi sabitle
-        # (Model alanların isimleri sende farklı olabilir, yoksa bu blok sorun çıkarmaz)
-        if self.satinalma is not None:
+        # Kullanıcıdan toplam alanlarını istemiyoruz (backend hesaplayacak)
+        for f in ("ara_toplam", "kdv_toplam", "genel_toplam"):
+            if f in self.fields:
+                self.fields.pop(f)
+
+        # Tedarikçi: ekranda göster ama POST'a güvenme
+        if self.satinalma is not None and "tedarikci" in self.fields:
             try:
                 tedarikci = self.satinalma.teklif.tedarikci
-                if "tedarikci" in self.fields:
-                    self.fields["tedarikci"].initial = tedarikci
-                    self.fields["tedarikci"].disabled = True
+                self.fields["tedarikci"].initial = tedarikci
+                self.fields["tedarikci"].disabled = True      # ekranda kilitli
+                self.fields["tedarikci"].required = False     # POST'a gelmeyecek, zorunlu olmasın
+            except Exception:
+                # satinalma->teklif->tedarikci zinciri yoksa form yine açılır
+                pass
+
+    def clean(self):
+        cleaned = super().clean()
+
+        # Disabled olduğu için POST'ta gelmeyen tedarikçiyi burada garantiye al
+        if self.satinalma is not None:
+            try:
+                cleaned["tedarikci"] = self.satinalma.teklif.tedarikci
             except Exception:
                 pass
 
-            # İsteğe bağlı: depo alanını sadece o siparişle ilgili depolarla filtrelemek istersen
-            # (depo mantığın farklıysa bu bloğu tamamen silebilirsin)
-            # if "depo" in self.fields:
-            #     self.fields["depo"].queryset = Depo.objects.all()
+        return cleaned
+
+    def save(self, commit=True):
+        """
+        Kaydederken tedarikçiyi server-side kesin ata.
+        Toplam alanları burada hesaplamıyoruz; kalemlerden view/model tarafında hesaplanmalı.
+        """
+        obj = super().save(commit=False)
+
+        if self.satinalma is not None:
+            # satinalma üzerinden tedarikçiyi kesinleştir
+            try:
+                obj.tedarikci = self.satinalma.teklif.tedarikci
+            except Exception:
+                pass
+
+            # bazı projelerde fatura modelinde satinalma alanı varsa otomatik bağlamak faydalı olur
+            if hasattr(obj, "satinalma") and getattr(obj, "satinalma_id", None) is None:
+                try:
+                    obj.satinalma = self.satinalma
+                except Exception:
+                    pass
+
+        if commit:
+            obj.save()
+            self.save_m2m()
+        return obj
 
     class Meta:
         model = Fatura
-        fields = "__all__"
+        fields = ["tedarikci", "fatura_no", "tarih", "dosya", "aciklama"]
+        widgets = {
+            "tedarikci": forms.Select(attrs={"class": "form-select"}),
+            "fatura_no": forms.TextInput(attrs={"class": "form-control"}),
+            "tarih": forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+            "dosya": forms.FileInput(attrs={"class": "form-control"}),
+            "aciklama": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+        }
 
 
 class FaturaKalemForm(forms.ModelForm):

@@ -504,90 +504,112 @@ def fatura_girisi(request, siparis_id):
 
     siparis = get_object_or_404(SatinAlma, id=siparis_id)
 
-    # Hizmet ise ayrı ekrana git
-    if siparis.teklif.is_kalemi:
-        return redirect('hizmet_faturasi_giris', siparis_id=siparis.id)
+    # Hizmet işi ise ayrı ekrana yönlendir
+    try:
+        if getattr(siparis.teklif, "is_kalemi", None):
+            return redirect('hizmet_faturasi_giris', siparis_id=siparis.id)
+    except Exception:
+        pass
 
     tedarikci = siparis.teklif.tedarikci
 
+    # ✅ Sanal depo (Vendor) bul
+    sanal_depo = Depo.objects.filter(is_sanal=True).first()
+    if not sanal_depo:
+        messages.error(request, "⛔ Sanal depo bulunamadı. Admin > Depo'dan is_sanal=True olan bir depo oluşturmalısın.")
+        return redirect("siparis_listesi")
+
     if request.method == "POST":
-        form = FaturaGirisForm(request.POST, request.FILES)
+        form = FaturaGirisForm(request.POST, request.FILES, satinalma=siparis)
         formset = FaturaKalemFormSet(request.POST)
 
         if form.is_valid() and formset.is_valid():
-            # Tedarikçi kilidi: kullanıcı POST ile değiştirmeye kalkarsa reddet
-            if form.cleaned_data.get("tedarikci") != tedarikci:
-                messages.error(request, "⛔ Bu siparişe fatura girerken tedarikçi değiştirilemez.")
-                return render(request, "fatura_girisi.html", {
-                    "siparis": siparis, "form": form, "formset": formset
-                })
+            try:
+                with transaction.atomic():
+                    # 1) Fatura başlığı
+                    fatura = form.save(commit=False)
+                    fatura.tedarikci = tedarikci
+                    fatura.save()
 
-            with transaction.atomic():
-                fatura = form.save(commit=False)
-                fatura.satinalma = siparis
-                fatura.save()
+                    # 2) Kalemleri kaydet
+                    formset.instance = fatura
+                    kalemler = formset.save(commit=False)
 
-                formset.instance = fatura
-                kalemler = formset.save(commit=False)
+                    gercek_kalem_sayisi = 0
+                    for k in kalemler:
+                        if not getattr(k, "malzeme_id", None):
+                            continue
+                        if to_decimal(getattr(k, "miktar", 0)) <= 0:
+                            continue
 
-                # En az 1 satır zorunlu
-                gercek_kalem_var = False
-                for k in kalemler:
-                    if k.malzeme_id and k.miktar and k.birim_fiyat is not None:
-                        gercek_kalem_var = True
+                        k.fatura = fatura
                         k.save()
+                        gercek_kalem_sayisi += 1
 
-                # Delete işaretli satırlar
-                for obj in formset.deleted_objects:
-                    obj.delete()
-
-                if not gercek_kalem_var:
-                    raise forms.ValidationError("En az 1 fatura kalemi girmelisin.")
-
-                # sipariş malzemesi ile eşleşen satırların miktarını faturalanan_miktar'a ekle
-                try:
-                    sip_malzeme = siparis.teklif.malzeme
-                    if sip_malzeme:
-                        eslesen_miktar = (
-                            FaturaKalem.objects
-                            .filter(fatura=fatura, malzeme=sip_malzeme)
-                            .aggregate(s=Sum("miktar"))["s"] or Decimal("0")
+                        # ✅ (ASIL İŞ) Fatura kalemi kaydolunca SANAL DEPOYA GİRİŞ hareketi oluştur
+                        DepoHareket.objects.get_or_create(
+                            ref_type="FATURA_KALEM",
+                            ref_id=k.id,
+                            ref_direction="IN",
+                            malzeme=k.malzeme,
+                            depo=sanal_depo,
+                            defaults={
+                                "siparis": siparis,
+                                "tarih": fatura.tarih or timezone.now().date(),
+                                "islem_turu": "giris",
+                                "miktar": k.miktar,
+                                "tedarikci": tedarikci,
+                                "aciklama": f"Fatura #{fatura.fatura_no} (Sanal depoya giriş)",
+                            }
                         )
-                        SatinAlma.objects.filter(pk=siparis.pk).update(
-                            faturalanan_miktar=F("faturalanan_miktar") + eslesen_miktar
-                        )
-                except Exception:
-                    pass
 
-            messages.success(request, f"✅ Fatura #{fatura.fatura_no} kaydedildi (çok kalem).")
-            return redirect('siparis_listesi')
+                    # Silinenleri sil
+                    for obj in formset.deleted_objects:
+                        obj.delete()
+
+                    if gercek_kalem_sayisi == 0:
+                        raise ValueError("En az 1 kalem girilmelidir.")
+
+                    # 3) Sipariş faturalanan_miktar güncelle (sipariş malzemesi kadar)
+                    try:
+                        sip_malzeme = getattr(siparis.teklif, "malzeme", None)
+                        if sip_malzeme:
+                            eslesen = (
+                                FaturaKalem.objects
+                                .filter(fatura=fatura, malzeme=sip_malzeme)
+                                .aggregate(s=Sum("miktar"))["s"]
+                                or Decimal("0")
+                            )
+                            siparis.faturalanan_miktar = (
+                                to_decimal(siparis.faturalanan_miktar) + to_decimal(eslesen)
+                            )
+                            siparis.save(update_fields=["faturalanan_miktar"])
+                    except Exception:
+                        pass
+
+                messages.success(request, f"✅ Fatura kaydedildi ve sanal depoya giriş yapıldı. Genel Toplam: {fatura.genel_toplam}")
+                return redirect("siparis_listesi")
+
+            except Exception as e:
+                messages.error(request, f"⛔ Kayıt sırasında hata: {str(e)}")
+        else:
+            messages.error(request, "⛔ Form doğrulama hatası var. Kırmızı kutudaki hatalara bak.")
 
         return render(request, "fatura_girisi.html", {
-            "siparis": siparis, "form": form, "formset": formset
+            "siparis": siparis,
+            "form": form,
+            "formset": formset,
         })
 
     # GET
-    form = FaturaGirisForm(initial={
-        "tedarikci": tedarikci.id,
-        "tarih": timezone.now().date(),
-    })
-    form.fields["tedarikci"].disabled = True
-
-    initial_lines = []
-    if siparis.teklif.malzeme:
-        initial_lines.append({
-            "malzeme": siparis.teklif.malzeme_id,
-            "kdv_orani": siparis.teklif.kdv_orani,
-        })
-
-    formset = FaturaKalemFormSet(initial=initial_lines)
+    form = FaturaGirisForm(initial={"tarih": timezone.now().date()}, satinalma=siparis)
+    formset = FaturaKalemFormSet()
 
     return render(request, "fatura_girisi.html", {
         "siparis": siparis,
         "form": form,
         "formset": formset,
     })
-
 
 @login_required
 def hizmet_faturasi_giris(request, siparis_id):

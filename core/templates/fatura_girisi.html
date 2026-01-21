@@ -39,6 +39,20 @@
             {% if form.non_field_errors %}
               <div class="alert alert-danger">{{ form.non_field_errors }}</div>
             {% endif %}
+            
+            {% if form.errors %}
+              <div class="alert alert-danger">
+                <b>Form Hataları</b>
+                <pre style="white-space: pre-wrap;">{{ form.errors }}</pre>
+              </div>
+            {% endif %}
+
+            {% if formset.errors %}
+              <div class="alert alert-danger">
+                <b>Kalem Hataları</b>
+                <pre style="white-space: pre-wrap;">{{ formset.errors }}</pre>
+              </div>
+            {% endif %}
 
             <div class="row mb-3">
               <div class="col-md-4">
@@ -71,7 +85,12 @@
 
             <div class="d-flex justify-content-between align-items-center mb-2">
               <h6 class="fw-bold mb-0"><i class="fas fa-list me-2"></i>Fatura Kalemleri</h6>
-              <small class="text-muted">Satır eklemek için en altta boş satır var. (Kaydet dediğinde eklenir)</small>
+              <div class="d-flex gap-2 align-items-center">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="add-row">
+                  <i class="fas fa-plus me-1"></i> Satır Ekle
+                </button>
+                <small class="text-muted">Satır ekle butonuyla istediğin kadar kalem gir.</small>
+              </div>
             </div>
 
             {{ formset.management_form }}
@@ -91,9 +110,9 @@
                     <th style="width:10%">Sil</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody id="kalemler-body">
                   {% for f in formset.forms %}
-                    <tr>
+                    <tr class="kalem-row">
                       <td>
                         {{ f.malzeme }}
                         {% if f.malzeme.errors %}<div class="text-danger small">{{ f.malzeme.errors }}</div>{% endif %}
@@ -114,7 +133,9 @@
                         {% if f.instance.pk %}
                           {{ f.DELETE }}
                         {% else %}
-                          <span class="text-muted">—</span>
+                          <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Satırı kaldır">
+                            <i class="fas fa-times"></i>
+                          </button>
                         {% endif %}
                       </td>
                     </tr>
@@ -122,6 +143,21 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- EMPTY FORM TEMPLATE (JS ile çoğaltacağız) -->
+            <template id="empty-form-template">
+              <tr class="kalem-row">
+                <td>__MALZEME__</td>
+                <td>__MIKTAR__</td>
+                <td>__BIRIM_FIYAT__</td>
+                <td>__KDV__</td>
+                <td class="text-center">
+                  <button type="button" class="btn btn-sm btn-outline-danger remove-row" title="Satırı kaldır">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </td>
+              </tr>
+            </template>
 
             <div class="d-grid gap-2 mt-4">
               <button type="submit" class="btn btn-success btn-lg fw-bold">
@@ -137,4 +173,57 @@
     </div>
   </div>
 </div>
+
+<script>
+(function(){
+  // Django default inline formset prefix: "form"
+  const totalFormsInput = document.getElementById("id_form-TOTAL_FORMS");
+  const body = document.getElementById("kalemler-body");
+  const addBtn = document.getElementById("add-row");
+
+  // Empty form html'ini Django'nun empty_form'undan güvenli üretelim:
+  const emptyMalzeme = `{{ formset.empty_form.malzeme|escapejs }}`;
+  const emptyMiktar = `{{ formset.empty_form.miktar|escapejs }}`;
+  const emptyBirimFiyat = `{{ formset.empty_form.birim_fiyat|escapejs }}`;
+  const emptyKdv = `{{ formset.empty_form.kdv_orani|escapejs }}`;
+
+  function bindRemoveButtons(scope){
+    (scope || document).querySelectorAll(".remove-row").forEach(btn => {
+      if(btn.dataset.bound) return;
+      btn.dataset.bound = "1";
+      btn.addEventListener("click", function(){
+        const tr = btn.closest("tr");
+        if(tr) tr.remove();
+        // IMPORTANT: TOTAL_FORMS'u düşürmüyoruz; Django index kaymasın.
+        // Bunun yerine "silmek" gerekiyorsa DELETE kullanılır. Yeni satırda DELETE yok, kaldırmak yeterli.
+      });
+    });
+  }
+
+  addBtn.addEventListener("click", function(){
+    const index = parseInt(totalFormsInput.value, 10);
+
+    // empty_form içindeki "__prefix__" yerine index koy
+    const malzemeHtml = emptyMalzeme.replaceAll("__prefix__", index);
+    const miktarHtml = emptyMiktar.replaceAll("__prefix__", index);
+    const birimHtml = emptyBirimFiyat.replaceAll("__prefix__", index);
+    const kdvHtml = emptyKdv.replaceAll("__prefix__", index);
+
+    const tpl = document.getElementById("empty-form-template").innerHTML
+      .replace("__MALZEME__", malzemeHtml)
+      .replace("__MIKTAR__", miktarHtml)
+      .replace("__BIRIM_FIYAT__", birimHtml)
+      .replace("__KDV__", kdvHtml);
+
+    const temp = document.createElement("tbody");
+    temp.innerHTML = tpl.trim();
+    body.appendChild(temp.firstElementChild);
+
+    totalFormsInput.value = index + 1;
+    bindRemoveButtons(body);
+  });
+
+  bindRemoveButtons(body);
+})();
+</script>
 {% endblock %}

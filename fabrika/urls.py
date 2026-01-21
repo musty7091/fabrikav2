@@ -72,7 +72,7 @@ urlpatterns = [
     path('siparis/detay/<int:siparis_id>/', views.siparis_detay, name='siparis_detay'),
 
     # ✅ Eskiden aynı isimle 2 kez vardı. İstersen route dursun ama adı farklı olsun:
-    path('fatura-gir/<int:siparis_id>/', views.fatura_girisi, name='fatura_girisi_eski'),
+    path('fatura-gir/<int:siparis_id>/', fatura_girisi, name='fatura_girisi'),
 
     path('fatura/sil/<int:fatura_id>/', views.fatura_sil, name='fatura_sil'),
 
