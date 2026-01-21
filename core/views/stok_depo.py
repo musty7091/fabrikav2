@@ -9,7 +9,7 @@ from django.db.models.functions import Coalesce
 from django.http import JsonResponse, HttpResponse
 from core.models import Malzeme, DepoHareket, MalzemeTalep, SatinAlma, Depo, DepoTransfer
 from core.forms import DepoTransferForm
-from core.services import StockService
+from core.services.stock import StockService
 from .guvenlik import yetki_kontrol
 
 @login_required

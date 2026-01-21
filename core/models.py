@@ -659,7 +659,7 @@ class Fatura(models.Model):
 
     dosya = models.FileField(upload_to='faturalar/', blank=True, null=True, verbose_name="Fatura Görseli/PDF")
     aciklama = models.TextField(blank=True, verbose_name="Açıklama")
-
+    odenen_tutar = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Ödenen Tutar")
     # Toplamlar (kalemlerden toplanır)
     ara_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Ara Toplam (KDV Hariç)")
     kdv_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="KDV Toplam")

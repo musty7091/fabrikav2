@@ -1,42 +1,54 @@
 from django.core.management.base import BaseCommand
-from django.apps import apps
-from django.db import connection
+from django.db import transaction
+# GenelGider import listesinden çıkarıldı
+from core.models import (
+    Kategori, Depo, Tedarikci, Malzeme, IsKalemi,
+    MalzemeTalep, Teklif, SatinAlma,
+    DepoTransfer, DepoHareket,
+    Hakedis, Odeme, Fatura, FaturaKalem,
+    GiderKategorisi
+)
 
 class Command(BaseCommand):
-    help = 'Kullanıcılar hariç core uygulamasındaki tüm verileri temizler'
+    help = "Veritabanındaki tüm iş verilerini temizler (Kullanıcılar hariç)"
 
-    def handle(self, *args, **kwargs):
-        self.stdout.write(self.style.WARNING("⚠️ Tüm veriler (Kullanıcılar hariç) siliniyor..."))
+    @transaction.atomic
+    def handle(self, *args, **options):
+        self.stdout.write("🧹 Temizlik işlemi başlıyor...")
+
+        # SİLME SIRASI ÇOK ÖNEMLİDİR!
+        # Bağımlı olan (Çocuk) tablolardan, Bağımsız olan (Ebeveyn) tablolara doğru silmeliyiz.
+
+        # 1. En Uçtaki Detaylar (Bağımlılıkları en çok olanlar)
+        self.sil(DepoHareket, "Depo Hareketleri")
+        self.sil(FaturaKalem, "Fatura Kalemleri")
+        self.sil(DepoTransfer, "Depo Transferleri")
         
-        # Core uygulamasındaki tüm modelleri al
-        core_models = apps.get_app_config('core').get_models()
+        # 2. Finansal İşlemler (Tedarikçi ve Siparişe bağlılar)
+        self.sil(Odeme, "Ödemeler")
+        self.sil(Hakedis, "Hakedişler")
+        self.sil(Fatura, "Faturalar") # ÖNEMLİ: Fatura silinmeden Tedarikçi silinemez!
         
-        # İlişkisel veri tabanlarında (PostgreSQL, MySQL, SQLite) 
-        # Foreign Key hataları almamak için kısıtlamaları geçici olarak kapatıyoruz
-        with connection.cursor() as cursor:
-            if connection.vendor == 'sqlite':
-                cursor.execute('PRAGMA foreign_keys = OFF;')
-            elif connection.vendor == 'postgresql':
-                cursor.execute('SET CONSTRAINTS ALL DEFERRED;')
-            else:
-                cursor.execute('SET FOREIGN_KEY_CHECKS = 0;')
+        # 3. Satınalma Süreci (Tersten başa)
+        self.sil(SatinAlma, "Siparişler (Satınalma)")
+        self.sil(Teklif, "Teklifler")
+        self.sil(MalzemeTalep, "Talepler")
 
-            for model in core_models:
-                # Kullanıcı modelini asla silme (User modeli genelde django.contrib.auth içindedir ama önlem olarak)
-                if model.__name__ in ['User', 'UserProfile']: 
-                    continue
-                
-                count = model.objects.all().count()
-                if count > 0:
-                    model.objects.all().delete()
-                    self.stdout.write(f"- {model.__name__}: {count} kayıt silindi.")
+        # 4. Ana Tanımlar (Artık bunları silmek güvenli)
+        self.sil(IsKalemi, "İş Kalemleri")
+        self.sil(Malzeme, "Malzemeler")
+        self.sil(Depo, "Depolar")
+        self.sil(Tedarikci, "Tedarikçiler")
+        self.sil(GiderKategorisi, "Gider Kategorileri")
+        self.sil(Kategori, "Kategoriler")
 
-            # Kısıtlamaları tekrar aç
-            if connection.vendor == 'sqlite':
-                cursor.execute('PRAGMA foreign_keys = ON;')
-            elif connection.vendor == 'postgresql':
-                pass # Postgres otomatik geri açar
-            else:
-                cursor.execute('SET FOREIGN_KEY_CHECKS = 1;')
+        self.stdout.write(self.style.SUCCESS("✅ TÜM VERİLER BAŞARIYLA SİLİNDİ! (Sistem sıfırlandı)"))
 
-        self.stdout.write(self.style.SUCCESS('✅ Envanter, stoklar ve tüm raporlar başarıyla temizlendi.'))
+    def sil(self, model, isim):
+        # Modelin veritabanında var olup olmadığını kontrol et (Emniyet sübabı)
+        try:
+            sayi = model.objects.count()
+            model.objects.all().delete()
+            self.stdout.write(f" - {isim} silindi: {sayi} adet")
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f" ! {isim} silinirken uyarı: {e}"))

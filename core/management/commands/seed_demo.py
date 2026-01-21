@@ -1,20 +1,27 @@
+# core/management/commands/seed_demo.py
+
 from django.core.management.base import BaseCommand
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from decimal import Decimal
 
+# Modellerinizi import ediyoruz
 from core.models import Kategori, IsKalemi, Tedarikci, Depo, Malzeme
 
-
 class Command(BaseCommand):
-    help = "Demo veriler oluşturur: 3 malzeme, 3 tedarikçi, 3 iş kalemi, 4 depo."
+    help = "Demo veriler oluşturur: Malzemeler, Tedarikçiler, İş Kalemleri ve Depolar."
 
     @transaction.atomic
     def handle(self, *args, **options):
-        # 1) Kategori
+        self.stdout.write("⏳ Demo veri oluşturma işlemi başladı...")
+
+        # ---------------------------------------------------------
+        # 1) Kategori (İş Kalemleri İçin)
+        # ---------------------------------------------------------
         kat, _ = Kategori.objects.get_or_create(isim="Genel İmalat")
 
-        # 2) 3 İş Kalemi
+        # ---------------------------------------------------------
+        # 2) 3 Adet İş Kalemi (Hizmet)
+        # ---------------------------------------------------------
         is_kalemleri = [
             ("Beton Dökümü", Decimal("100.00"), "m3"),
             ("Demir Bağlama", Decimal("500.00"), "kg"),
@@ -28,11 +35,14 @@ class Command(BaseCommand):
                     "hedef_miktar": hedef_miktar,
                     "birim": birim,
                     "kdv_orani": 20,
-                    "aciklama": "Demo iş kalemi",
+                    "aciklama": "Demo iş kalemi (Otomatik oluşturuldu)",
                 },
             )
+        self.stdout.write(" - İş kalemleri tamam.")
 
-        # 3) 3 Tedarikçi
+        # ---------------------------------------------------------
+        # 3) 3 Adet Tedarikçi
+        # ---------------------------------------------------------
         tedarikciler = [
             ("Atlas Yapı Market Ltd.", "Ali Yılmaz", "0532 000 00 01", "Lefkoşa"),
             ("Kıbrıs Elektrik Tedarik", "Ayşe Demir", "0533 000 00 02", "Girne"),
@@ -47,14 +57,18 @@ class Command(BaseCommand):
                     "adres": adres,
                 },
             )
+        self.stdout.write(" - Tedarikçiler tamam.")
 
-        # 4) 4 Depo
-        # Not: Senin Depo.save() boolean'ları depo_tipi ile senkronluyor; burada doğru depo_tipi veriyoruz.
+        # ---------------------------------------------------------
+        # 4) 4 Farklı Tipte Depo
+        # ---------------------------------------------------------
+        # Not: Sizin Depo modelinizdeki 'save' metodu, depo_tipi'ne göre
+        # is_sanal ve is_kullanim_yeri alanlarını otomatik ayarlayacaktır.
         depolar = [
-            ("Merkez Depo", "Lefkoşa / Merkez", "WAREHOUSE"),
-            ("Girne Şantiye", "Girne / Şantiye", "SITE"),
-            ("Tedarikçi Deposu (Sanal)", "Vendor Location", "VENDOR"),
-            ("Sarf Yeri / Uygulama", "Saha Kullanım", "CONSUMPTION"),
+            ("Merkez Depo", "Lefkoşa / Merkez", "WAREHOUSE"),          # Fiziksel
+            ("Girne Şantiye", "Girne / Şantiye", "SITE"),              # Şantiye
+            ("Tedarikçi Deposu (Sanal)", "Vendor Location", "VENDOR"), # Sanal
+            ("Sarf Yeri / Uygulama", "Saha Kullanım", "CONSUMPTION"),  # Tüketim
         ]
         for isim, adres, depo_tipi in depolar:
             Depo.objects.get_or_create(
@@ -64,8 +78,11 @@ class Command(BaseCommand):
                     "depo_tipi": depo_tipi,
                 },
             )
+        self.stdout.write(" - Depolar tamam.")
 
-        # 5) 3 Malzeme
+        # ---------------------------------------------------------
+        # 5) 3 Adet Malzeme
+        # ---------------------------------------------------------
         malzemeler = [
             ("Ø14 İnşaat Demiri", "insaat", "Kardemir", "kg", 20, Decimal("200")),
             ("CEM I 42.5 Çimento", "insaat", "Akçansa", "kg", 20, Decimal("50")),
@@ -80,9 +97,9 @@ class Command(BaseCommand):
                     "birim": birim,
                     "kdv_orani": kdv_orani,
                     "kritik_stok": kritik,
-                    "aciklama": "Demo malzeme",
+                    "aciklama": "Demo malzeme (Otomatik oluşturuldu)",
                 },
             )
+        self.stdout.write(" - Malzemeler tamam.")
 
-        self.stdout.write(self.style.SUCCESS("✅ Demo veriler oluşturuldu (veya zaten vardı)."))
-        self.stdout.write("Kontrol: Admin panelde Depo / Malzeme / Tedarikçi / İş Kalemi listelerine bakabilirsin.")
+        self.stdout.write(self.style.SUCCESS("✅ TÜM DEMO VERİLER BAŞARIYLA OLUŞTURULDU!"))

@@ -3,17 +3,12 @@ from django.urls import path
 from django.conf import settings
 from django.conf.urls.static import static
 
+# Genel Viewlar (views/__init__.py üzerinden gelenler)
 from core import views
+
+# ✅ YENİ: Parçalanmış Finans Modülleri
+from core.views import finans_invoices, finans_payments
 from core.views.ekstre import stok_ekstresi, cari_ekstresi
-
-
-# Finans modülünden direkt kullanılanlar
-from core.views.finans import (
-    hizmet_faturasi_giris,
-    fatura_girisi,          # finans/fatura/... için kullanılacak
-    odeme_dashboard,
-    cek_durum_degistir, serbest_fatura_girisi,
-)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,29 +22,38 @@ urlpatterns = [
     path('teklif/ekle/', views.teklif_ekle, name='teklif_ekle'),
 
     # 3. Dashboardlar
-    path('finans-dashboard/', views.finans_dashboard, name='finans_dashboard'),
+    # ✅ Güncellendi: Artık finans_payments içinde
+    path('finans-dashboard/', finans_payments.finans_dashboard, name='finans_dashboard'),
+    path('odeme-dashboard/', finans_payments.odeme_dashboard, name='odeme_dashboard'),
     path('depo-dashboard/', views.depo_dashboard, name='depo_dashboard'),
-    path('odeme-dashboard/', odeme_dashboard, name='odeme_dashboard'),
 
     # 4. Detaylar
-    path('finans/detay-ozet/', views.finans_ozeti, name='finans_ozeti'),
-    path('cek-takibi/', views.cek_takibi, name='cek_takibi'),
+    path('finans/detay-ozet/', finans_payments.finans_ozeti, name='finans_ozeti'),
+    path('cek-takibi/', finans_payments.cek_takibi, name='cek_takibi'),
 
     # 5. İşlemler (Finans & Teklif)
-    path('cek-durum/<int:odeme_id>/', cek_durum_degistir, name='cek_durum_degistir'),
-
-    # ✅ KRİTİK DÜZELTME:
-    # Eskiden views.tedarikci_ekstresi çağırıyordu (yoktu).
-    # Template'ler url name olarak 'tedarikci_ekstresi' kullandığı için name aynı kaldı.
-    path('tedarikci/<int:tedarikci_id>/', views.cari_ekstre, name='tedarikci_ekstresi'),
+    path('cek-durum/<int:odeme_id>/', finans_payments.cek_durum_degistir, name='cek_durum_degistir'),
+    
+    # ✅ Tedarikçi Ekstresi (Cari Ekstre - Payments içinde)
+    path('tedarikci/<int:tedarikci_id>/', finans_payments.cari_ekstre, name='tedarikci_ekstresi'),
 
     path('teklif/durum/<int:teklif_id>/<str:yeni_durum>/', views.teklif_durum_guncelle, name='teklif_durum_guncelle'),
 
-    path('fatura/hizmet/<int:siparis_id>/', hizmet_faturasi_giris, name='hizmet_faturasi_giris'),
-    path("fatura/serbest/", serbest_fatura_girisi, name="serbest_fatura_girisi"),
-
-    # ✅ Tek bir tane "fatura_girisi" name bırakıyoruz (template’ler bozulmasın)
-    path("finans/fatura/<int:siparis_id>/", fatura_girisi, name="fatura_girisi"),
+    # ========================================================
+    # ✅ YENİ FATURA SİSTEMİ (finans_invoices)
+    # ========================================================
+    # Standart Fatura Girişi (Siparişe bağlı)
+    path("finans/fatura/<int:siparis_id>/", finans_invoices.fatura_girisi, name="fatura_girisi"),
+    
+    # Serbest Fatura (Siparişsiz)
+    path("fatura/serbest/", finans_invoices.serbest_fatura_girisi, name="serbest_fatura_girisi"),
+    
+    # Hizmet Faturası
+    path('fatura/hizmet/<int:siparis_id>/', finans_invoices.hizmet_faturasi_giris, name='hizmet_faturasi_giris'),
+    
+    # Fatura Silme (Hala views içinde veya invoices içine taşıdıysanız oradan çağırın)
+    path('fatura/sil/<int:fatura_id>/', views.fatura_sil, name='fatura_sil'),
+    # ========================================================
 
     # 6. Hızlı Tanımlamalar
     path('tedarikci/ekle/', views.tedarikci_ekle, name='tedarikci_ekle'),
@@ -63,33 +67,35 @@ urlpatterns = [
     path('arsiv/', views.arsiv_raporu, name='arsiv_raporu'),
     path('talep/geri-al/<int:talep_id>/', views.talep_arsivden_cikar, name='talep_arsivden_cikar'),
 
+    # 8. Stok & Hizmet Listeleri
     path('stok-listesi/', views.stok_listesi, name='stok_listesi'),
     path('hizmet-listesi/', views.hizmet_listesi, name='hizmet_listesi'),
     path('hizmet/ekle/', views.hizmet_ekle, name='hizmet_ekle'),
     path('hizmet/duzenle/<int:pk>/', views.hizmet_duzenle, name='hizmet_duzenle'),
     path('hizmet/sil/<int:pk>/', views.hizmet_sil, name='hizmet_sil'),
 
+    # 9. Sipariş Yönetimi
     path('siparisler/', views.siparis_listesi, name='siparis_listesi'),
     path('mal-kabul/<int:siparis_id>/', views.mal_kabul, name='mal_kabul'),
     path('siparis/detay/<int:siparis_id>/', views.siparis_detay, name='siparis_detay'),
 
-    # ✅ Eskiden aynı isimle 2 kez vardı. İstersen route dursun ama adı farklı olsun:
-    path('fatura-gir/<int:siparis_id>/', fatura_girisi, name='fatura_girisi'),
-    path("fatura/serbest/", serbest_fatura_girisi, name="serbest_fatura_girisi"),
-    path('fatura/sil/<int:fatura_id>/', views.fatura_sil, name='fatura_sil'),
-
+    # 10. Depo Yönetimi & Stok
     path('depo/transfer/', views.depo_transfer, name='depo_transfer'),
     path('api/depo-stok/', views.get_depo_stok, name='get_depo_stok'),
     path('debug/stok/<int:malzeme_id>/', views.stok_rontgen),
     path('stok/gecmis/<int:malzeme_id>/', views.stok_hareketleri, name='stok_hareketleri'),
-
     path('rapor/envanter/', views.envanter_raporu, name='envanter_raporu'),
 
-    path('hakedis/ekle/<int:siparis_id>/', views.hakedis_ekle, name='hakedis_ekle'),
+    # ========================================================
+    # ✅ ÖDEME VE HAKEDİŞ SİSTEMİ (finans_payments)
+    # ========================================================
+    path('hakedis/ekle/<int:siparis_id>/', finans_payments.hakedis_ekle, name='hakedis_ekle'),
+    path('odeme/yap/', finans_payments.odeme_yap, name='odeme_yap'),
+    path('cari/ekstre/<int:tedarikci_id>/', finans_payments.cari_ekstre, name='cari_ekstre'),
+    path('api/tedarikci-bakiye/<int:tedarikci_id>/', views.get_tedarikci_bakiye, name='api_tedarikci_bakiye'),
+    # ========================================================
 
-    path('odeme/yap/', views.odeme_yap, name='odeme_yap'),
-    path('cari/ekstre/<int:tedarikci_id>/', views.cari_ekstre, name='cari_ekstre'),
-
+    # 11. Tanımlamalar (CRUD)
     path('tanim-yonetimi/', views.tanim_yonetimi, name='tanim_yonetimi'),
     path('kategori/ekle/', views.kategori_ekle, name='kategori_ekle'),
     path('depo/ekle/', views.depo_ekle, name='depo_ekle'),
@@ -108,14 +114,14 @@ urlpatterns = [
     path('malzeme/duzenle/<int:pk>/', views.malzeme_duzenle, name='malzeme_duzenle'),
     path('malzeme/sil/<int:pk>/', views.malzeme_sil, name='malzeme_sil'),
 
+    # 12. Yardımcılar
     path('islem-sonuc/<str:model_name>/<int:pk>/', views.islem_sonuc, name='islem_sonuc'),
     path('yazdir/<str:model_name>/<int:pk>/', views.belge_yazdir, name='belge_yazdir'),
 
-    path('api/tedarikci-bakiye/<int:tedarikci_id>/', views.get_tedarikci_bakiye, name='api_tedarikci_bakiye'),
-
+    # 13. Ekstreler (Özel View Modülünden)
     path("ekstre/stok/", stok_ekstresi, name="stok_ekstresi"),
     path("ekstre/cari/", cari_ekstresi, name="cari_ekstresi"),
 
-    # 9. Oturum
+    # 14. Oturum
     path('cikis/', views.cikis_yap, name='cikis_yap'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

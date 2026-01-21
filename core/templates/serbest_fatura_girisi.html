@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Serbest Fatura Girişi (Manuel)</h1>
+</div>
+
+{% if messages %}
+    {% for message in messages %}
+        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+{% endif %}
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    
+    <div class="card mb-4 shadow-sm">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Fatura Bilgileri</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Tedarikçi</label>
+                    {{ form.tedarikci }}
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Hangi Depoya Girecek?</label>
+                    {{ form.depo }}
+                    <small class="text-muted">Stoklar bu depoya eklenecektir.</small>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Fatura No</label>
+                    {{ form.fatura_no }}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Tarih</label>
+                    {{ form.tarih }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Dosya</label>
+                    {{ form.dosya }}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Açıklama</label>
+                    {{ form.aciklama }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3 shadow-sm">
+        <div class="card-header bg-secondary text-white">
+            <h5 class="mb-0">Fatura Kalemleri</h5>
+        </div>
+        <div class="card-body">
+            {{ formset.management_form }}
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover" id="kalemTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 30%;">Malzeme</th>
+                            <th>Miktar</th>
+                            <th>Birim Fiyat (KDV Hariç)</th>
+                            <th>KDV (%)</th>
+                            <th>Açıklama</th>
+                            <th>Sil</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in formset %}
+                            <tr>
+                                <td>{{ f.malzeme }} {{ f.id }}</td> <td>{{ f.miktar }}</td>
+                                <td>{{ f.fiyat }}</td>
+                                <td>{{ f.kdv_oran }}</td>
+                                <td>{{ f.aciklama }}</td>
+                                <td>{{ f.DELETE }}</td>
+                            </tr>
+                            {% if f.errors %}
+                            <tr>
+                                <td colspan="6" class="text-danger small">{{ f.errors }}</td>
+                            </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-success w-100 btn-lg">💾 Faturayı ve Stokları Kaydet</button>
+</form>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Eğer projenizde jQuery/Select2 varsa aktif edin
+        // $('.select2').select2();
+    });
+</script>
+{% endblock %}

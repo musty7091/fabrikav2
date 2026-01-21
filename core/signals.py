@@ -5,7 +5,7 @@ from django.dispatch import receiver
 from django.db import transaction
 
 from .models import DepoTransfer, SatinAlma
-from core.services import StockService
+from core.services.stock import StockService
 
 logger = logging.getLogger(__name__)
 
