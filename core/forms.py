@@ -339,9 +339,9 @@ class FaturaKalemForm(forms.ModelForm):
         widgets = {
             "malzeme": forms.Select(attrs={"class": "form-select"}),
             "miktar": forms.NumberInput(attrs={"class": "form-control", "step": "0.001", "min": "0"}),
-            "fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
-            "kdv_oran": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
-            "aciklama": forms.TextInput(attrs={"class": "form-control"}),
+            "fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.0001", "min": "0"}),
+            "kdv_oran": forms.Select(attrs={"class": "form-select"}),
+            "aciklama": forms.TextInput(attrs={"class": "form-control", "placeholder": "Açıklama (opsiyonel)"}),
         }
 
     def clean_miktar(self):
@@ -353,7 +353,7 @@ class FaturaKalemForm(forms.ModelForm):
     def clean_fiyat(self):
         v = to_decimal(self.cleaned_data.get("fiyat", 0))
         if v < 0:
-            raise forms.ValidationError("Fiyat negatif olamaz.")
+            raise forms.ValidationError("Birim fiyat negatif olamaz.")
         return v
 
 

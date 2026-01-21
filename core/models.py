@@ -706,8 +706,15 @@ class FaturaKalem(models.Model):
     malzeme = models.ForeignKey(Malzeme, on_delete=models.PROTECT, related_name="fatura_kalemleri", verbose_name="Malzeme")
 
     miktar = models.DecimalField(max_digits=15, decimal_places=3, default=0, verbose_name="Miktar")
-    birim_fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat (KDV Hariç)")
-    kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
+
+    # --- Yeni alanlar (formların beklediği) ---
+    fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat (KDV Hariç)")
+    kdv_oran = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
+    aciklama = models.CharField(max_length=255, blank=True, default="", verbose_name="Açıklama")
+
+    # --- Eski alanlar (projenin başka yerleri kullanıyor olabilir; senkron tutacağız) ---
+    birim_fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="(Eski) Birim Fiyat", editable=False)
+    kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="(Eski) KDV Oranı", editable=False)
 
     satir_ara_toplam = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Satır Ara Toplam")
     satir_kdv = models.DecimalField(max_digits=15, decimal_places=2, default=0, verbose_name="Satır KDV")
@@ -715,15 +722,40 @@ class FaturaKalem(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def _sync_legacy_fields(self):
+        """
+        Geriye uyumluluk:
+        - Yeni alanlar (fiyat, kdv_oran) üzerinden tek kaynak gibi davran.
+        - Eski alanları (birim_fiyat, kdv_orani) her kayıtta otomatik güncelle.
+        """
+        # fiyat -> birim_fiyat
+        if self.fiyat is None and self.birim_fiyat is not None:
+            self.fiyat = self.birim_fiyat
+        self.birim_fiyat = self.fiyat if self.fiyat is not None else 0
+
+        # kdv_oran -> kdv_orani
+        if self.kdv_oran is None and self.kdv_orani is not None:
+            self.kdv_oran = self.kdv_orani
+        self.kdv_orani = self.kdv_oran if self.kdv_oran is not None else 0
+
+        # aciklama None gelirse boş string yap
+        if self.aciklama is None:
+            self.aciklama = ""
+
     def clean(self):
+        self._sync_legacy_fields()
+
         if self.miktar is None or self.miktar <= 0:
             raise ValidationError({"miktar": "Miktar 0'dan büyük olmalı."})
-        if self.birim_fiyat is None or self.birim_fiyat < 0:
-            raise ValidationError({"birim_fiyat": "Birim fiyat negatif olamaz."})
+
+        if self.fiyat is None or self.fiyat < 0:
+            raise ValidationError({"fiyat": "Birim fiyat negatif olamaz."})
 
     def recalc(self):
-        kdv = Decimal("0") if self.kdv_orani == -1 else Decimal(str(self.kdv_orani))
-        ara = (to_decimal(self.miktar) * to_decimal(self.birim_fiyat)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        self._sync_legacy_fields()
+
+        kdv = Decimal("0") if self.kdv_oran == -1 else Decimal(str(self.kdv_oran))
+        ara = (to_decimal(self.miktar) * to_decimal(self.fiyat)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         kdv_tutar = (ara * (kdv / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         genel = (ara + kdv_tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -732,6 +764,7 @@ class FaturaKalem(models.Model):
         self.satir_genel_toplam = genel
 
     def save(self, *args, **kwargs):
+        self._sync_legacy_fields()
         self.full_clean()
         self.recalc()
         super().save(*args, **kwargs)
