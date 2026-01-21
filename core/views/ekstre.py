@@ -1,122 +1,168 @@
-# core/views/ekstre.py
+from django.shortcuts import render, get_object_or_404
+from django.contrib.auth.decorators import login_required
 from decimal import Decimal
-from django.shortcuts import render
-from django.db.models import Sum, Q
+from core.models import Tedarikci, Fatura, Hakedis, Odeme, Malzeme, DepoHareket
+from core.utils import to_decimal
 
-from core.models import (
-    Malzeme, Depo, DepoHareket,
-    Tedarikci, Fatura, Odeme, Hakedis
-)
-
-def stok_ekstresi(request):
-    malzeme_id = request.GET.get("malzeme")
-    depo_id = request.GET.get("depo")
-    tur = request.GET.get("tur")          # giris/cikis/iade
-    ref_type = request.GET.get("ref_type") # TRANSFER/FATURA/MANUEL/IADE
-    d1 = request.GET.get("d1")
-    d2 = request.GET.get("d2")
-
-    qs = DepoHareket.objects.select_related("malzeme", "depo").all().order_by("-tarih", "-id")
-
-    if malzeme_id:
-        qs = qs.filter(malzeme_id=malzeme_id)
-    if depo_id:
-        qs = qs.filter(depo_id=depo_id)
-    if tur:
-        qs = qs.filter(islem_turu=tur)
-    if ref_type:
-        qs = qs.filter(ref_type=ref_type)
-    if d1:
-        qs = qs.filter(tarih__gte=d1)
-    if d2:
-        qs = qs.filter(tarih__lte=d2)
-
-    ozet = qs.aggregate(
-        toplam_giris=Sum("miktar", filter=Q(islem_turu="giris")),
-        toplam_cikis=Sum("miktar", filter=Q(islem_turu="cikis")),
-        toplam_iade=Sum("miktar", filter=Q(islem_turu="iade")),
-    )
-    ozet = {k: (v or Decimal("0")) for k, v in ozet.items()}
-    ozet["net"] = ozet["toplam_giris"] - ozet["toplam_cikis"] - ozet["toplam_iade"]
-
-    return render(request, "core/ekstre_stok.html", {
-        "malzemeler": Malzeme.objects.all().order_by("isim"),
-        "depolar": Depo.objects.all().order_by("isim"),
-        "hareketler": qs[:500],
-        "ozet": ozet,
-    })
-
-
+@login_required
 def cari_ekstresi(request):
-    tedarikci_id = request.GET.get("tedarikci")
-    d1 = request.GET.get("d1")
-    d2 = request.GET.get("d2")
+    """
+    Tedarikçi Cari Ekstresi
+    """
+    tedarikciler = Tedarikci.objects.all().order_by('firma_unvani')
+    secilen_tedarikci = None
+    hareketler = []
+    
+    tedarikci_id = request.GET.get('tedarikci')
+    tarih1 = request.GET.get('d1')
+    tarih2 = request.GET.get('d2')
 
-    finans_satirlar = []
-    stok_hareketleri = DepoHareket.objects.none()
-
-    # tedarikci_id güvenli dönüşüm (tek yerde)
-    try:
-        tedarikci_id = int(tedarikci_id) if tedarikci_id else None
-    except (TypeError, ValueError):
-        tedarikci_id = None
+    toplam_borc = Decimal('0')
+    toplam_alacak = Decimal('0')
+    genel_bakiye = Decimal('0')
 
     if tedarikci_id:
-        faturalar = (
-            Fatura.objects
-            .select_related("satinalma", "satinalma__teklif", "satinalma__teklif__tedarikci")
-            .filter(satinalma__teklif__tedarikci_id=tedarikci_id)
-        )
+        secilen_tedarikci = get_object_or_404(Tedarikci, id=tedarikci_id)
+        
+        # 1. Verileri Çek
+        faturalar = Fatura.objects.filter(tedarikci=secilen_tedarikci)
+        hakedisler = Hakedis.objects.filter(satinalma__teklif__tedarikci=secilen_tedarikci, onay_durumu=True)
+        odemeler = Odeme.objects.filter(tedarikci=secilen_tedarikci)
 
-        odemeler = Odeme.objects.filter(tedarikci_id=tedarikci_id)
+        # Tarih Filtresi
+        if tarih1:
+            faturalar = faturalar.filter(tarih__gte=tarih1)
+            hakedisler = hakedisler.filter(tarih__gte=tarih1)
+            odemeler = odemeler.filter(tarih__gte=tarih1)
+        if tarih2:
+            faturalar = faturalar.filter(tarih__lte=tarih2)
+            hakedisler = hakedisler.filter(tarih__lte=tarih2)
+            odemeler = odemeler.filter(tarih__lte=tarih2)
 
-        hakedisler = (
-            Hakedis.objects
-            .select_related("satinalma", "satinalma__teklif", "satinalma__teklif__tedarikci")
-            .filter(satinalma__teklif__tedarikci_id=tedarikci_id)
-        )
+        # 2. Listeyi Oluştur
+        # Faturalar
+        for fat in faturalar:
+            tutar = getattr(fat, 'genel_toplam', Decimal('0'))
+            hareketler.append({
+                'tarih': fat.tarih,
+                'evrak': fat.fatura_no,
+                'aciklama': f"Fatura: {fat.aciklama or ''}",
+                'borc': tutar,
+                'alacak': Decimal('0'),
+                'tip': 'Fatura'
+            })
 
-        if d1:
-            faturalar = faturalar.filter(tarih__gte=d1)
-            odemeler = odemeler.filter(tarih__gte=d1)
-            hakedisler = hakedisler.filter(tarih__gte=d1)
-        if d2:
-            faturalar = faturalar.filter(tarih__lte=d2)
-            odemeler = odemeler.filter(tarih__lte=d2)
-            hakedisler = hakedisler.filter(tarih__lte=d2)
+        # Hakedişler
+        for hk in hakedisler:
+            hareketler.append({
+                'tarih': hk.tarih,
+                'evrak': f"HK-{hk.hakedis_no}",
+                'aciklama': f"Hakediş ({hk.satinalma.teklif.is_kalemi.isim if hk.satinalma.teklif.is_kalemi else 'İşçilik'})",
+                'borc': hk.odenecek_net_tutar,
+                'alacak': Decimal('0'),
+                'tip': 'Hakediş'
+            })
 
-        for f in faturalar:
-            finans_satirlar.append({"tarih": f.tarih, "tip": "FATURA", "borc": f.tutar, "alacak": Decimal("0"), "aciklama": f"Fatura {f.fatura_no}"})
-        for o in odemeler:
-            finans_satirlar.append({"tarih": o.tarih, "tip": "ÖDEME", "borc": Decimal("0"), "alacak": o.tutar, "aciklama": o.aciklama or ""})
-        for h in hakedisler:
-            finans_satirlar.append({"tarih": h.tarih, "tip": "HAKEDİŞ", "borc": h.odenecek_net_tutar, "alacak": Decimal("0"), "aciklama": f"Hakediş #{h.hakedis_no}"})
+        # Ödemeler
+        for odeme in odemeler:
+            hareketler.append({
+                'tarih': odeme.tarih,
+                'evrak': "-",
+                'aciklama': f"Ödeme: {odeme.get_odeme_turu_display()}",
+                'borc': Decimal('0'),
+                'alacak': odeme.tutar,
+                'tip': 'Ödeme'
+            })
 
-        finans_satirlar.sort(key=lambda x: (x["tarih"], x["tip"]))
+        # 3. Sırala ve Bakiye Hesapla
+        hareketler.sort(key=lambda x: x['tarih'])
 
-        bakiye = Decimal("0")
-        for s in finans_satirlar:
-            bakiye += (s["borc"] - s["alacak"])
-            s["bakiye"] = bakiye
+        bakiye = Decimal('0')
+        for h in hareketler:
+            h['borc'] = to_decimal(h['borc'])
+            h['alacak'] = to_decimal(h['alacak'])
+            
+            bakiye += (h['borc'] - h['alacak'])
+            h['bakiye'] = bakiye
+            
+            toplam_borc += h['borc']
+            toplam_alacak += h['alacak']
+        
+        genel_bakiye = toplam_borc - toplam_alacak
 
-        stok_hareketleri = (
-            DepoHareket.objects
-            .select_related("malzeme", "depo", "siparis", "siparis__teklif", "siparis__teklif__tedarikci")
-            .filter(
-                Q(tedarikci_id=tedarikci_id) |
-                Q(siparis__teklif__tedarikci_id=tedarikci_id)
-            )
-            .order_by("-tarih", "-id")
-        )
+    context = {
+        'tedarikciler': tedarikciler,
+        'secilen_tedarikci': secilen_tedarikci,
+        'hareketler': hareketler,
+        'toplam_borc': toplam_borc,
+        'toplam_alacak': toplam_alacak,
+        'genel_bakiye': genel_bakiye,
+        'filtre_d1': tarih1,
+        'filtre_d2': tarih2,
+    }
 
-        # ✅ stok tarafına da tarih filtresi
-        if d1:
-            stok_hareketleri = stok_hareketleri.filter(tarih__gte=d1)
-        if d2:
-            stok_hareketleri = stok_hareketleri.filter(tarih__lte=d2)
+    return render(request, 'cari_ekstre.html', context)
 
-    return render(request, "core/ekstre_cari.html", {
-        "tedarikciler": Tedarikci.objects.all().order_by("firma_unvani"),
-        "finans_satirlar": finans_satirlar,
-        "stok_hareketleri": stok_hareketleri[:500],
+
+@login_required
+def stok_ekstresi(request):
+    """
+    Malzeme Stok Ekstresi
+    Düzeltme: Modeldeki 'depo_tipi' alanına göre kontrol yapıldı.
+    """
+    malzemeler = Malzeme.objects.all()
+    secilen_malzeme = None
+    hareketler = []
+    
+    malzeme_id = request.GET.get('malzeme')
+    if malzeme_id:
+        secilen_malzeme = get_object_or_404(Malzeme, id=malzeme_id)
+        
+        # Hareketleri tarih ve ID sırasına göre çek
+        depo_hareketleri = DepoHareket.objects.filter(malzeme=secilen_malzeme).order_by('tarih', 'id')
+        
+        stok_bakiye = Decimal('0')
+        
+        for dh in depo_hareketleri:
+            miktar = to_decimal(dh.miktar)
+            giris = Decimal('0')
+            cikis = Decimal('0')
+            
+            # --- STOK HAREKET MANTIĞI ---
+            
+            if dh.islem_turu == 'giris':
+                giris = miktar
+                
+                # KRİTİK KONTROL:
+                # Sizin modelinizde "Kullanım / Sarf Yeri" -> "CONSUMPTION" olarak tutuluyor.
+                # Eğer ürün bu tip bir depoya girdiyse, stok bakiyesini artırmıyoruz (Tüketildi).
+                
+                if dh.depo and dh.depo.depo_tipi == 'CONSUMPTION':
+                    pass # Bakiyeye dokunma, bu bir tüketim girişidir.
+                else:
+                    stok_bakiye += miktar
+
+            elif dh.islem_turu in ['cikis', 'transfer', 'iade']:
+                cikis = miktar
+                stok_bakiye -= miktar
+            
+            # İşlem adını belirle
+            islem_adi = dh.get_islem_turu_display() if hasattr(dh, 'get_islem_turu_display') else dh.islem_turu
+
+            hareketler.append({
+                'tarih': dh.tarih,
+                'islem': islem_adi,
+                'aciklama': dh.aciklama,
+                'giris': giris,
+                'cikis': cikis,
+                'bakiye': stok_bakiye,
+                'depo': dh.depo.isim if dh.depo else "-",
+                # Template'de kullanmak isterseniz diye tipi de ekledim
+                'depo_tipi': dh.depo.get_depo_tipi_display() if dh.depo else ""
+            })
+
+    return render(request, 'stok_ekstresi.html', {
+        'malzemeler': malzemeler,
+        'secilen_malzeme': secilen_malzeme,
+        'hareketler': hareketler
     })

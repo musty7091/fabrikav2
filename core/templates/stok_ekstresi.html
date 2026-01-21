@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Malzeme Stok Ekstresi{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4"><i class="fas fa-boxes me-2"></i>Malzeme Stok Ekstresi</h4>
+            
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label fw-bold">Malzeme Seçiniz</label>
+                    <select name="malzeme" class="form-select select2" required>
+                        <option value="">Seçiniz...</option>
+                        {% for mal in malzemeler %}
+                            <option value="{{ mal.id }}" {% if secilen_malzeme.id == mal.id %}selected{% endif %}>
+                                {{ mal.isim }} ({{ mal.marka|default:"Markasız" }}) - [{{ mal.get_birim_display }}]
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search me-1"></i> Hareketleri Getir
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if secilen_malzeme %}
+        <div class="card shadow">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0 text-primary">{{ secilen_malzeme.isim }}</h5>
+                    <small class="text-muted">{{ secilen_malzeme.marka|default:"" }}</small>
+                </div>
+                <div>
+                    <span class="badge bg-secondary fs-6">
+                        {% with son_kayit=hareketler|last %}
+                            Toplam Stok: {{ son_kayit.bakiye|default:"0"|floatformat:2 }} {{ secilen_malzeme.get_birim_display }}
+                        {% endwith %}
+                    </span>
+                    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary ms-2">
+                        <i class="fas fa-print me-1"></i> Yazdır
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Tarih</th>
+                                <th>İşlem Türü</th>
+                                <th>Depo</th>
+                                <th>Açıklama</th>
+                                <th class="text-end">Giriş</th>
+                                <th class="text-end">Çıkış</th>
+                                <th class="text-end">Stok Bakiyesi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for h in hareketler %}
+                            <tr>
+                                <td>{{ h.tarih|date:"d.m.Y" }}</td>
+                                <td>
+                                    {% if h.giris > 0 %}
+                                        <span class="badge bg-success"><i class="fas fa-arrow-down me-1"></i>Giriş</span>
+                                    {% else %}
+                                        <span class="badge bg-danger"><i class="fas fa-arrow-up me-1"></i>Çıkış</span>
+                                    {% endif %}
+                                    <small class="text-muted ms-1">{{ h.islem }}</small>
+                                </td>
+                                <td><i class="fas fa-warehouse text-muted me-1"></i>{{ h.depo }}</td>
+                                <td>{{ h.aciklama }}</td>
+                                
+                                <td class="text-end text-success fw-bold">
+                                    {% if h.giris > 0 %}+{{ h.giris|floatformat:2 }}{% else %}-{% endif %}
+                                </td>
+                                <td class="text-end text-danger fw-bold">
+                                    {% if h.cikis > 0 %}-{{ h.cikis|floatformat:2 }}{% else %}-{% endif %}
+                                </td>
+                                <td class="text-end fw-bold text-dark">
+                                    {{ h.bakiye|floatformat:2 }} {{ secilen_malzeme.get_birim_display }}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7" class="text-center py-5 text-muted">
+                                    <i class="fas fa-box-open fa-3x mb-3"></i>
+                                    <p>Bu malzemeye ait henüz bir stok hareketi bulunmuyor.</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-info text-center py-5">
+            <i class="fas fa-search fa-2x mb-3"></i>
+            <h4>Stok geçmişini görmek için yukarıdan bir malzeme seçiniz.</h4>
+        </div>
+    {% endif %}
+</div>
+
+<script>
+    $(document).ready(function() {
+        $('.select2').select2({
+            theme: "bootstrap-5",
+            width: '100%',
+            placeholder: "Malzeme arayın..."
+        });
+    });
+</script>
+{% endblock %}

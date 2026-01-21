@@ -1,40 +1,131 @@
 {% extends 'base.html' %}
+{% load humanize %}
 
 {% block title %}Cari Hesap Ekstresi{% endblock %}
 
 {% block content %}
-<div class="container py-5">
-    <div class="d-flex justify-content-between mb-4">
-        <div>
-            <h3 class="fw-bold">{{ tedarikci.firma_unvani }}</h3>
-            <p class="text-muted">Cari Hesap Ekstresi</p>
+<div class="container py-4">
+    
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title mb-4"><i class="fas fa-file-invoice-dollar me-2"></i>Cari Hesap Ekstresi</h4>
+            
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">Tedarikçi Seçiniz</label>
+                    <select name="tedarikci" class="form-select select2" required>
+                        <option value="">Seçiniz...</option>
+                        {% for ted in tedarikciler %}
+                            <option value="{{ ted.id }}" {% if secilen_tedarikci.id == ted.id %}selected{% endif %}>
+                                {{ ted.firma_unvani }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Başlangıç Tarihi</label>
+                    <input type="date" name="d1" class="form-control" value="{{ filtre_d1 }}">
+                </div>
+                
+                <div class="col-md-3">
+                    <label class="form-label">Bitiş Tarihi</label>
+                    <input type="date" name="d2" class="form-control" value="{{ filtre_d2 }}">
+                </div>
+                
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search me-1"></i> Getir
+                    </button>
+                </div>
+            </form>
         </div>
-        <button onclick="window.print()" class="btn btn-outline-dark">Yazdır / PDF</button>
     </div>
 
-    <div class="card shadow-sm">
-        <table class="table table-striped mb-0">
-            <thead class="table-dark">
-                <tr>
-                    <th>Tarih</th>
-                    <th>Açıklama</th>
-                    <th class="text-end">Borç (Alım)</th>
-                    <th class="text-end">Alacak (Ödeme)</th>
-                    <th class="text-end">Bakiye</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for satir in hareketler %}
-                <tr>
-                    <td>{{ satir.tarih|date:"d.m.Y" }}</td>
-                    <td>{{ satir.aciklama }}</td>
-                    <td class="text-end text-danger">{% if satir.borc > 0 %}{{ satir.borc|floatformat:2 }}{% endif %}</td>
-                    <td class="text-end text-success">{% if satir.alacak > 0 %}{{ satir.alacak|floatformat:2 }}{% endif %}</td>
-                    <td class="text-end fw-bold">{{ satir.bakiye|floatformat:2 }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    {% if secilen_tedarikci %}
+        <div class="card shadow">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-primary">{{ secilen_tedarikci.firma_unvani }}</h5>
+                <div>
+                    <button onclick="window.print()" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-print me-1"></i> Yazdır
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Tarih</th>
+                                <th>Evrak No</th>
+                                <th>Açıklama</th>
+                                <th class="text-end">Borç (Alım)</th>
+                                <th class="text-end">Alacak (Ödeme)</th>
+                                <th class="text-end">Bakiye</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for h in hareketler %}
+                            <tr>
+                                <td>{{ h.tarih|date:"d.m.Y" }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ h.evrak }}</span>
+                                </td>
+                                <td>
+                                    {% if h.tip == 'Fatura' %}
+                                        <i class="fas fa-file-invoice me-1 text-primary"></i>
+                                    {% elif h.tip == 'Hakediş' %}
+                                        <i class="fas fa-hard-hat me-1 text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-money-bill-wave me-1 text-success"></i>
+                                    {% endif %}
+                                    {{ h.aciklama }}
+                                </td>
+                                <td class="text-end text-danger fw-bold">
+                                    {% if h.borc > 0 %}{{ h.borc|floatformat:2 }} TL{% else %}-{% endif %}
+                                </td>
+                                <td class="text-end text-success fw-bold">
+                                    {% if h.alacak > 0 %}{{ h.alacak|floatformat:2 }} TL{% else %}-{% endif %}
+                                </td>
+                                <td class="text-end fw-bold">
+                                    {{ h.bakiye|floatformat:2 }} TL
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-muted">
+                                    Bu tarih aralığında kayıtlı hareket bulunamadı.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr class="fw-bold fs-5">
+                                <td colspan="3" class="text-end">TOPLAM:</td>
+                                <td class="text-end text-danger">{{ toplam_borc|floatformat:2 }} TL</td>
+                                <td class="text-end text-success">{{ toplam_alacak|floatformat:2 }} TL</td>
+                                <td class="text-end text-primary">{{ genel_bakiye|floatformat:2 }} TL</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    {% else %}
+        <div class="alert alert-info text-center py-5">
+            <i class="fas fa-arrow-up fa-2x mb-3"></i>
+            <h4>Lütfen yukarıdan bir tedarikçi seçiniz.</h4>
+        </div>
+    {% endif %}
 </div>
+
+<script>
+    $(document).ready(function() {
+        $('.select2').select2({
+            theme: "bootstrap-5",
+            width: '100%'
+        });
+    });
+</script>
 {% endblock %}

@@ -99,25 +99,19 @@ class Depo(models.Model):
         default="WAREHOUSE",
         verbose_name="Depo Tipi",
     )
-
-    # Geriye uyum alanları (kalsın)
+    
+    # Geriye uyum alanları (Otomatik yönetiliyor)
     is_sanal = models.BooleanField(default=False, verbose_name="Sanal / Tedarikçi Deposu mu?")
     is_kullanim_yeri = models.BooleanField(default=False, verbose_name="Kullanım / Sarf Yeri mi?")
 
     def save(self, *args, **kwargs):
-        """
-        TEK DOĞRU: depo_tipi
-        - depo_tipi -> boolean’ları da doğruya çeker
-        - boolean -> depo_tipi’ni doğruya çeker
-        Çift anlam/çelişki kalmaz.
-        """
-        # 1) Eğer boolean’lar set edildiyse depo_tipi’ni zorla
+        # 1) Boolean'lar set edildiyse tipi güncelle
         if self.is_kullanim_yeri:
             self.depo_tipi = "CONSUMPTION"
         elif self.is_sanal:
             self.depo_tipi = "VENDOR"
 
-        # 2) depo_tipi’ne göre boolean’ları senkronla (çelişkiyi bitir)
+        # 2) Tipe göre boolean'ları güncelle (Senkronizasyon)
         if self.depo_tipi == "CONSUMPTION":
             self.is_kullanim_yeri = True
             self.is_sanal = False
@@ -125,20 +119,14 @@ class Depo(models.Model):
             self.is_sanal = True
             self.is_kullanim_yeri = False
         else:
-            # WAREHOUSE / SITE
+            # WAREHOUSE veya SITE ise normal depodur
             self.is_sanal = False
             self.is_kullanim_yeri = False
 
         super().save(*args, **kwargs)
 
     def __str__(self):
-        if self.is_sanal:
-            tur = "(Sanal)"
-        elif self.is_kullanim_yeri:
-            tur = "(Kullanım)"
-        else:
-            tur = "(Fiziksel)"
-        return f"{self.isim} {tur}"
+        return f"{self.isim} ({self.get_depo_tipi_display()})"
 
     class Meta:
         verbose_name_plural = "Depo Tanımları"
