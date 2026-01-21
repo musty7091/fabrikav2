@@ -258,68 +258,38 @@ class IsKalemiForm(forms.ModelForm):
 
 class FaturaGirisForm(forms.ModelForm):
     """
-    Çok kalem fatura giriş formu.
-
-    - View bu formu `satinalma=...` parametresiyle çağırdığı için bu kwarg kabul edilir.
-    - Tedarikçi ekranda kilitli (disabled) olduğunda POST'a gelmez; bu yüzden tedarikçiyi
-      satinalma üzerinden server-side kesinleştiririz.
-    - ara_toplam / kdv_toplam / genel_toplam kullanıcı girişi değil, kalemlerden hesaplanır;
-      bu yüzden formdan çıkarılır.
+    Siparişe bağlı fatura girişi formu.
+    - View içinde tedarikçi set ediliyor (siparişten).
+    - Formda tedarikçiyi kilitlemek istiyorsan template'te disable edebilirsin.
     """
 
     def __init__(self, *args, **kwargs):
         self.satinalma = kwargs.pop("satinalma", None)
         super().__init__(*args, **kwargs)
 
-        # Kullanıcıdan toplam alanlarını istemiyoruz (backend hesaplayacak)
-        for f in ("ara_toplam", "kdv_toplam", "genel_toplam"):
-            if f in self.fields:
-                self.fields.pop(f)
-
-        # Tedarikçi: ekranda göster ama POST'a güvenme
-        if self.satinalma is not None and "tedarikci" in self.fields:
+        # Sipariş varsa tedarikçiyi otomatik getir (gösterim amaçlı)
+        if self.satinalma is not None:
             try:
-                tedarikci = self.satinalma.teklif.tedarikci
-                self.fields["tedarikci"].initial = tedarikci
-                self.fields["tedarikci"].disabled = True      # ekranda kilitli
-                self.fields["tedarikci"].required = False     # POST'a gelmeyecek, zorunlu olmasın
+                self.fields["tedarikci"].initial = self.satinalma.teklif.tedarikci
             except Exception:
-                # satinalma->teklif->tedarikci zinciri yoksa form yine açılır
                 pass
 
     def clean(self):
         cleaned = super().clean()
-
-        # Disabled olduğu için POST'ta gelmeyen tedarikçiyi burada garantiye al
         if self.satinalma is not None:
             try:
                 cleaned["tedarikci"] = self.satinalma.teklif.tedarikci
             except Exception:
                 pass
-
         return cleaned
 
     def save(self, commit=True):
-        """
-        Kaydederken tedarikçiyi server-side kesin ata.
-        Toplam alanları burada hesaplamıyoruz; kalemlerden view/model tarafında hesaplanmalı.
-        """
         obj = super().save(commit=False)
-
         if self.satinalma is not None:
-            # satinalma üzerinden tedarikçiyi kesinleştir
             try:
                 obj.tedarikci = self.satinalma.teklif.tedarikci
             except Exception:
                 pass
-
-            # bazı projelerde fatura modelinde satinalma alanı varsa otomatik bağlamak faydalı olur
-            if hasattr(obj, "satinalma") and getattr(obj, "satinalma_id", None) is None:
-                try:
-                    obj.satinalma = self.satinalma
-                except Exception:
-                    pass
-
         if commit:
             obj.save()
             self.save_m2m()
@@ -337,40 +307,64 @@ class FaturaGirisForm(forms.ModelForm):
         }
 
 
+class SerbestFaturaGirisForm(forms.ModelForm):
+    """
+    Teklifsiz / siparişsiz (serbest) fatura.
+    Depo seçtirir: faturayı işleyince ürünler o depoya (örn Sanal Depo) girer.
+    """
+
+    depo = forms.ModelChoiceField(
+        queryset=Depo.objects.all(),
+        required=True,
+        widget=forms.Select(attrs={"class": "form-select"}),
+        help_text="Bu faturadaki mallar hangi depoya girecek?"
+    )
+
+    class Meta:
+        model = Fatura
+        fields = ["tedarikci", "fatura_no", "tarih", "dosya", "aciklama"]
+        widgets = {
+            "tedarikci": forms.Select(attrs={"class": "form-select"}),
+            "fatura_no": forms.TextInput(attrs={"class": "form-control"}),
+            "tarih": forms.DateInput(attrs={"class": "form-control", "type": "date"}),
+            "dosya": forms.FileInput(attrs={"class": "form-control"}),
+            "aciklama": forms.Textarea(attrs={"class": "form-control", "rows": 3}),
+        }
+
+
 class FaturaKalemForm(forms.ModelForm):
-    """
-    Fatura satırları: malzeme + miktar + birim fiyat + kdv oranı
-    """
     class Meta:
         model = FaturaKalem
-        fields = ["malzeme", "miktar", "birim_fiyat", "kdv_orani"]
+        fields = ["malzeme", "miktar", "fiyat", "kdv_oran", "aciklama"]
         widgets = {
-            "malzeme": forms.Select(attrs={"class": "form-select select2", "aria-label": "Malzeme"}),
-            "miktar": forms.NumberInput(attrs={"class": "form-control", "step": "0.001", "aria-label": "Miktar"}),
-            "birim_fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.0001", "aria-label": "Birim Fiyat (KDV Hariç)"}),
-            "kdv_orani": forms.Select(attrs={"class": "form-select", "aria-label": "KDV Oranı"}),
+            "malzeme": forms.Select(attrs={"class": "form-select"}),
+            "miktar": forms.NumberInput(attrs={"class": "form-control", "step": "0.001", "min": "0"}),
+            "fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
+            "kdv_oran": forms.NumberInput(attrs={"class": "form-control", "step": "0.01", "min": "0"}),
+            "aciklama": forms.TextInput(attrs={"class": "form-control"}),
         }
 
     def clean_miktar(self):
-        miktar = self.cleaned_data.get("miktar")
-        if miktar is None or miktar <= 0:
+        v = to_decimal(self.cleaned_data.get("miktar", 0))
+        if v <= 0:
             raise forms.ValidationError("Miktar 0'dan büyük olmalı.")
-        return miktar
+        return v
 
-    def clean_birim_fiyat(self):
-        bf = self.cleaned_data.get("birim_fiyat")
-        if bf is None or bf < 0:
-            raise forms.ValidationError("Birim fiyat negatif olamaz.")
-        return bf
+    def clean_fiyat(self):
+        v = to_decimal(self.cleaned_data.get("fiyat", 0))
+        if v < 0:
+            raise forms.ValidationError("Fiyat negatif olamaz.")
+        return v
 
 
 FaturaKalemFormSet = inlineformset_factory(
     parent_model=Fatura,
     model=FaturaKalem,
     form=FaturaKalemForm,
-    extra=1,
-    can_delete=True,
-)
+    extra=5,
+    can_delete=True
+    )
+
 
 
 # ========================================================

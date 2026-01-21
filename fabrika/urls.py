@@ -6,12 +6,13 @@ from django.conf.urls.static import static
 from core import views
 from core.views.ekstre import stok_ekstresi, cari_ekstresi
 
+
 # Finans modülünden direkt kullanılanlar
 from core.views.finans import (
     hizmet_faturasi_giris,
     fatura_girisi,          # finans/fatura/... için kullanılacak
     odeme_dashboard,
-    cek_durum_degistir,
+    cek_durum_degistir, serbest_fatura_girisi,
 )
 
 urlpatterns = [
@@ -45,6 +46,7 @@ urlpatterns = [
     path('teklif/durum/<int:teklif_id>/<str:yeni_durum>/', views.teklif_durum_guncelle, name='teklif_durum_guncelle'),
 
     path('fatura/hizmet/<int:siparis_id>/', hizmet_faturasi_giris, name='hizmet_faturasi_giris'),
+    path("fatura/serbest/", serbest_fatura_girisi, name="serbest_fatura_girisi"),
 
     # ✅ Tek bir tane "fatura_girisi" name bırakıyoruz (template’ler bozulmasın)
     path("finans/fatura/<int:siparis_id>/", fatura_girisi, name="fatura_girisi"),
@@ -73,7 +75,7 @@ urlpatterns = [
 
     # ✅ Eskiden aynı isimle 2 kez vardı. İstersen route dursun ama adı farklı olsun:
     path('fatura-gir/<int:siparis_id>/', fatura_girisi, name='fatura_girisi'),
-
+    path("fatura/serbest/", serbest_fatura_girisi, name="serbest_fatura_girisi"),
     path('fatura/sil/<int:fatura_id>/', views.fatura_sil, name='fatura_sil'),
 
     path('depo/transfer/', views.depo_transfer, name='depo_transfer'),

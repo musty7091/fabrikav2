@@ -640,6 +640,14 @@ class Hakedis(models.Model):
 # ==========================================
 
 class Fatura(models.Model):
+    satinalma = models.ForeignKey(
+        'SatinAlma',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="faturalar",
+        verbose_name="Bağlı Sipariş"
+    )
     """
     1 Fatura = 1 Tedarikçi
     Çok kalemli yapı: FaturaKalem satırları üzerinden ilerler.

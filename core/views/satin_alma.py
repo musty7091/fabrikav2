@@ -99,61 +99,102 @@ def mal_kabul(request):
 
 
 @login_required
-def fatura_girisi(request, siparis_id=None):
+def fatura_girisi(request, siparis_id):
     """
-    FINAL:
-    - URL hangi view'i çağırıyor karışmasın diye __init__.py'de satin_alma override yaptık.
-    - Depo: Sanal depo (VENDOR) otomatik kilitlenir.
-    - Tutar: Kullanıcı girebilir. Boş bırakırsa form hesaplar.
-    - Finansal/stok update: Fatura.save() içinde (model) zaten var. Burada tekrar yok.
+    ALIŞ FATURASI GİRİŞİ (ÇOK KALEM)
+    - Tedarikçi siparişten gelir, formdan gelen değer dikkate alınmaz.
+    - Toplamlar FaturaKalem.save() içinde otomatik hesaplanıyor (model tarafında recalc var).
+    - Siparişin faturalanan_miktar alanı: bu faturadaki sipariş malzemesi kalemleri kadar artar.
     """
     if not yetki_kontrol(request.user, ['OFIS_VE_SATINALMA', 'MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
 
-    s_id = siparis_id or request.GET.get('siparis_id')
-    if not s_id:
-        messages.error(request, "Sipariş seçilmeden fatura girilemez.")
-        return redirect('siparis_listesi')
+    siparis = get_object_or_404(SatinAlma, id=siparis_id)
 
-    secili_siparis = get_object_or_404(SatinAlma, id=s_id)
+    # Hizmet işi ise ayrı ekrana yönlendir (sende bu view finans.py'de var)
+    try:
+        if getattr(siparis.teklif, "is_kalemi", None):
+            return redirect('hizmet_faturasi_giris', siparis_id=siparis.id)
+    except Exception:
+        pass
 
-    sanal_depo = Depo.objects.filter(is_sanal=True).first()
-    if not sanal_depo:
-        messages.error(request, "Sanal depo bulunamadı. Lütfen önce sanal depo tanımlayın.")
-        return redirect('siparis_listesi')
+    tedarikci = siparis.teklif.tedarikci
 
     if request.method == "POST":
-        form = FaturaGirisForm(request.POST, request.FILES, satinalma=secili_siparis)
+        form = FaturaGirisForm(request.POST, request.FILES, satinalma=siparis)
+        formset = FaturaKalemFormSet(request.POST)
 
-        if form.is_valid():
-            fatura = form.save(commit=False)
+        if form.is_valid() and formset.is_valid():
+            try:
+                with transaction.atomic():
+                    # 1) Fatura başlığı
+                    fatura = form.save(commit=False)
+                    fatura.tedarikci = tedarikci
+                    # Fatura modelinde satinalma alanı varsa set et:
+                    if hasattr(fatura, "satinalma"):
+                        fatura.satinalma = siparis
+                    fatura.save()
 
-            # ✅ zorunlu bağlar
-            fatura.satinalma = secili_siparis
-            fatura.depo = sanal_depo  # sanal depoya kilitle
+                    # 2) Kalemleri kaydet
+                    formset.instance = fatura
+                    kalemler = formset.save(commit=False)
 
-            # form.save() instance.tutar'ı ayarladı (girilen ya da hesaplanan)
-            fatura.save()
+                    gercek_kalem_sayisi = 0
+                    for k in kalemler:
+                        if not getattr(k, "malzeme_id", None):
+                            continue
+                        if to_decimal(getattr(k, "miktar", 0)) <= 0:
+                            continue
+                        k.fatura = fatura
+                        k.save()
+                        gercek_kalem_sayisi += 1
 
-            messages.success(request, f"✅ Fatura kaydedildi. No: {fatura.fatura_no} | Miktar: {fatura.miktar} | Tutar: {fatura.tutar}")
-            return redirect('siparis_detay', siparis_id=secili_siparis.id)
+                    for obj in formset.deleted_objects:
+                        obj.delete()
 
-        # Hataları kullanıcıya göster
-        messages.error(request, "Form kaydedilemedi:\n" + form.errors.as_text())
+                    if gercek_kalem_sayisi == 0:
+                        raise ValueError("En az 1 kalem girilmelidir.")
+
+                    # 3) Sipariş faturalanan_miktar güncelle (siparişin malzemesi kadar)
+                    try:
+                        sip_malzeme = getattr(siparis.teklif, "malzeme", None)
+                        if sip_malzeme:
+                            eslesen = (
+                                FaturaKalem.objects
+                                .filter(fatura=fatura, malzeme=sip_malzeme)
+                                .aggregate(s=Sum("miktar"))["s"]
+                                or Decimal("0")
+                            )
+                            if hasattr(siparis, "faturalanan_miktar"):
+                                siparis.faturalanan_miktar = (
+                                    to_decimal(siparis.faturalanan_miktar) + to_decimal(eslesen)
+                                )
+                                siparis.save(update_fields=["faturalanan_miktar"])
+                    except Exception:
+                        pass
+
+                messages.success(request, f"✅ Fatura kaydedildi. Genel Toplam: {fatura.genel_toplam}")
+                return redirect("siparis_listesi")
+
+            except Exception as e:
+                messages.error(request, f"⛔ Kayıt sırasında hata: {str(e)}")
+        else:
+            messages.error(request, "⛔ Form doğrulama hatası var. Kırmızı kutudaki hatalara bak.")
+
+        return render(request, "fatura_girisi.html", {
+            "siparis": siparis,
+            "form": form,
+            "formset": formset,
+        })
 
     # GET
-    kalan = secili_siparis.kalan_fatura_miktar
-    initial_data = {
-        'tarih': timezone.now().date(),
-        'miktar': kalan,
-        'depo': sanal_depo.id,  # template hidden input bunu basıyor
-    }
-    form = FaturaGirisForm(initial=initial_data, satinalma=secili_siparis)
+    form = FaturaGirisForm(initial={"tarih": timezone.now().date()}, satinalma=siparis)
+    formset = FaturaKalemFormSet()
 
-    return render(request, 'fatura_girisi.html', {
-        'form': form,
-        'secili_siparis': secili_siparis,
-        'sanal_depo': sanal_depo
+    return render(request, "fatura_girisi.html", {
+        "siparis": siparis,
+        "form": form,
+        "formset": formset,
     })
 
 

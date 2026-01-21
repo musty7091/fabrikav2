@@ -11,7 +11,11 @@
             <i class="fas fa-file-invoice me-2"></i> ALIŞ FATURASI GİRİŞİ (ÇOK KALEM)
           </h5>
           <span class="badge bg-warning text-dark">
-            Sipariş #{{ siparis.id }} — {{ siparis.teklif.tedarikci.firma_unvani }}
+            {% if siparis %}
+              Sipariş #{{ siparis.id }} — {{ siparis.teklif.tedarikci.firma_unvani }}
+            {% else %}
+              Serbest Fatura
+            {% endif %}
           </span>
         </div>
 

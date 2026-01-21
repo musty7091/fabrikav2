@@ -12,7 +12,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.utils import timezone
 
 from core.forms import (
-    OdemeForm, HakedisForm, Depo, FaturaGirisForm, FaturaKalemFormSet
+    OdemeForm, HakedisForm, Depo, FaturaGirisForm, FaturaKalemFormSet, SerbestFaturaGirisForm
 )
 from core.models import (
     Tedarikci, Fatura, Odeme, Kategori, GiderKategorisi,
@@ -612,6 +612,75 @@ def fatura_girisi(request, siparis_id):
     })
 
 @login_required
+def serbest_fatura_girisi(request):
+    if not yetki_kontrol(request.user, ['OFIS_VE_SATINALMA', 'MUHASEBE_FINANS', 'YONETICI']):
+        return redirect('erisim_engellendi')
+
+    sanal_depo = Depo.objects.filter(is_sanal=True).first()
+    if not sanal_depo:
+        messages.error(request, "⛔ Sanal depo bulunamadı. Admin > Depo'dan is_sanal=True depo oluştur.")
+        return redirect("siparis_listesi")
+
+    if request.method == "POST":
+        form = SerbestFaturaForm(request.POST, request.FILES)
+        formset = FaturaKalemFormSet(request.POST)
+
+        if form.is_valid() and formset.is_valid():
+            try:
+                with transaction.atomic():
+                    fatura = form.save()
+
+                    formset.instance = fatura
+                    kalemler = formset.save(commit=False)
+
+                    gercek = 0
+                    for k in kalemler:
+                        if not getattr(k, "malzeme_id", None):
+                            continue
+                        if to_decimal(getattr(k, "miktar", 0)) <= 0:
+                            continue
+
+                        k.fatura = fatura
+                        k.save()
+                        gercek += 1
+
+                        DepoHareket.objects.get_or_create(
+                            ref_type="FATURA_KALEM",
+                            ref_id=k.id,
+                            ref_direction="IN",
+                            malzeme=k.malzeme,
+                            depo=sanal_depo,
+                            defaults={
+                                "siparis": None,
+                                "tarih": fatura.tarih or timezone.now().date(),
+                                "islem_turu": "giris",
+                                "miktar": k.miktar,
+                                "tedarikci": fatura.tedarikci,
+                                "aciklama": f"Serbest Fatura #{fatura.fatura_no} (Sanal depoya giriş)",
+                            }
+                        )
+
+                    for obj in formset.deleted_objects:
+                        obj.delete()
+
+                    if gercek == 0:
+                        raise ValueError("En az 1 kalem girilmelidir.")
+
+                messages.success(request, f"✅ Serbest fatura kaydedildi ve sanal depoya giriş yapıldı. Toplam: {fatura.genel_toplam}")
+                return redirect("serbest_fatura_girisi")
+
+            except Exception as e:
+                messages.error(request, f"⛔ Hata: {str(e)}")
+        else:
+            messages.error(request, "⛔ Form doğrulama hatası var.")
+
+        return render(request, "fatura_girisi.html", {"form": form, "formset": formset, "siparis": None})
+
+    form = SerbestFaturaForm(initial={"tarih": timezone.now().date()})
+    formset = FaturaKalemFormSet()
+    return render(request, "fatura_girisi.html", {"form": form, "formset": formset, "siparis": None})
+
+@login_required
 def hizmet_faturasi_giris(request, siparis_id):
     """
     SADECE HİZMETLER İÇİN: Depo sormayan, stok hareketi yapmayan sade fatura ekranı.
@@ -740,3 +809,78 @@ def cek_durum_degistir(request, odeme_id):
 
     messages.info(request, "Çek durumu değiştirme özelliği henüz aktif değil.")
     return redirect('cek_takibi')
+
+@login_required
+def serbest_fatura_girisi(request):
+    """
+    TEKLİFSİZ / SİPARİŞSİZ (SERBEST) FATURA GİRİŞİ
+    - Kullanıcı tedarikçiyi seçer
+    - Kullanıcı depo seçer (örn Sanal Depo)
+    - Kalemler girilir
+    - (Stok girişi senin projede nerede yapılıyorsa) burada depo giriş hareketi tetiklenebilir
+      Eğer stok hareketini FaturaKalem.save() zaten yapıyorsa ekstra bir şey gerekmez.
+    """
+    if not yetki_kontrol(request.user, ['OFIS_VE_SATINALMA', 'MUHASEBE_FINANS', 'YONETICI']):
+        return redirect('erisim_engellendi')
+
+    if request.method == "POST":
+        form = SerbestFaturaGirisForm(request.POST, request.FILES)
+        formset = FaturaKalemFormSet(request.POST)
+
+        if form.is_valid() and formset.is_valid():
+            try:
+                with transaction.atomic():
+                    fatura = form.save(commit=False)
+                    depo = form.cleaned_data["depo"]
+
+                    # Eğer Fatura modelinde depo alanın varsa burada set edebilirsin:
+                    if hasattr(fatura, "depo"):
+                        fatura.depo = depo
+
+                    fatura.save()
+
+                    formset.instance = fatura
+                    kalemler = formset.save(commit=False)
+
+                    gercek_kalem_sayisi = 0
+                    for k in kalemler:
+                        if not getattr(k, "malzeme_id", None):
+                            continue
+                        if to_decimal(getattr(k, "miktar", 0)) <= 0:
+                            continue
+
+                        k.fatura = fatura
+
+                        # Eğer FaturaKalem modelinde depo alanı varsa depoyu bas:
+                        if hasattr(k, "depo"):
+                            k.depo = depo
+
+                        k.save()
+                        gercek_kalem_sayisi += 1
+
+                    for obj in formset.deleted_objects:
+                        obj.delete()
+
+                    if gercek_kalem_sayisi == 0:
+                        raise ValueError("En az 1 kalem girilmelidir.")
+
+                messages.success(request, f"✅ Serbest fatura kaydedildi. Genel Toplam: {fatura.genel_toplam}")
+                return redirect("fatura_listesi")  # sende farklıysa değiştir
+
+            except Exception as e:
+                messages.error(request, f"⛔ Kayıt sırasında hata: {str(e)}")
+        else:
+            messages.error(request, "⛔ Form doğrulama hatası var. Kırmızı kutudaki hatalara bak.")
+
+        return render(request, "serbest_fatura_girisi.html", {
+            "form": form,
+            "formset": formset,
+        })
+
+    form = SerbestFaturaGirisForm(initial={"tarih": timezone.now().date()})
+    formset = FaturaKalemFormSet()
+
+    return render(request, "serbest_fatura_girisi.html", {
+        "form": form,
+        "formset": formset,
+    })
