@@ -812,3 +812,72 @@ class Odeme(models.Model):
         verbose_name = "7. Ödeme & Çek Çıkışı"
         verbose_name_plural = "7. Ödeme & Çek Çıkışı"
         ordering = ['-tarih']
+# ==========================================
+# 12.B ÖDEME DAĞITIM (MAHSUP / ALLOCATION)
+# ==========================================
+
+class OdemeDagitim(models.Model):
+    """
+    Bir ödemenin (özellikle avansın) bir veya birden fazla faturaya dağıtımını tutar.
+    - Odeme mevcut kalır (nakit/havale/çek)
+    - Fatura mevcut kalır
+    - Bu tablo sadece "eşleştirme/mahsup" içindir.
+
+    Not: Tüm tutarlar TRY üzerinden ilerler (senin sistemin zaten TL ödeme kaydediyor).
+    İleride döviz mimarisine geçerken buraya currency/fx_rate de eklenebilir.
+    """
+    odeme = models.ForeignKey(
+        "Odeme",
+        on_delete=models.CASCADE,
+        related_name="dagitimlar",
+        verbose_name="Ödeme"
+    )
+    fatura = models.ForeignKey(
+        "Fatura",
+        on_delete=models.CASCADE,
+        related_name="dagitimlar",
+        verbose_name="Fatura"
+    )
+
+    tutar = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Dağıtılan Tutar (TL)")
+    tarih = models.DateField(default=timezone.now, verbose_name="Mahsup Tarihi")
+
+    aciklama = models.CharField(max_length=200, blank=True, default="", verbose_name="Not")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.tutar is None or to_decimal(self.tutar) <= 0:
+            raise ValidationError({"tutar": "Dağıtım tutarı 0'dan büyük olmalı."})
+
+        # Aynı tedarikçide olma kuralı (çok kritik)
+        if self.odeme_id and self.fatura_id:
+            if self.odeme.tedarikci_id != self.fatura.tedarikci_id:
+                raise ValidationError("Ödeme ile Fatura farklı tedarikçilere ait olamaz!")
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+        # Dağıtım değişince faturanın ödenenini güncelle (geri uyumlu)
+        # Not: Bu mekanizma, ileride servis katmanına taşınabilir.
+        try:
+            toplam = self.fatura.dagitimlar.aggregate(t=Sum("tutar"))["t"] or Decimal("0")
+            self.fatura.odenen_tutar = to_decimal(toplam)
+            self.fatura.save(update_fields=["odenen_tutar"])
+        except Exception:
+            pass
+
+    def __str__(self):
+        return f"Dağıtım: {self.odeme_id} → Fatura {self.fatura_id} ({self.tutar} TL)"
+
+    class Meta:
+        verbose_name = "Ödeme Dağıtım (Mahsup)"
+        verbose_name_plural = "Ödeme Dağıtımları (Mahsup)"
+        ordering = ["-tarih", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["odeme", "fatura", "tarih"],
+                name="uniq_odeme_fatura_tarih"
+            )
+        ]

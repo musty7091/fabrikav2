@@ -1,24 +1,34 @@
 from decimal import Decimal, InvalidOperation
 from datetime import date
+
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.db.models import Sum
-from django.core.exceptions import ObjectDoesNotExist
 from django.http import JsonResponse
+from django.db import transaction
 
 # Modeller ve Formlar
 from core.models import (
     SatinAlma, Hakedis, Odeme, Tedarikci, Fatura, GiderKategorisi
 )
+
+# OdemeDagitim opsiyonel (migration yapılmadıysa dosya patlamasın)
+try:
+    from core.models import OdemeDagitim
+except Exception:
+    OdemeDagitim = None
+
 from core.forms import HakedisForm, OdemeForm
 from core.views.guvenlik import yetki_kontrol
 from core.utils import to_decimal, tcmb_kur_getir
 from core.services.finans_payments import PaymentService
 
 
-# --- YARDIMCI FONKSİYONLAR ---
+# =========================================================
+# YARDIMCI FONKSİYONLAR
+# =========================================================
 
 def clean_currency_input(value_str):
     """
@@ -29,22 +39,18 @@ def clean_currency_input(value_str):
     if not value_str:
         return Decimal('0.00')
 
-    # Zaten sayıysa direkt çevir
     if isinstance(value_str, (int, float, Decimal)):
         return to_decimal(value_str)
 
     value_str = str(value_str).strip()
 
-    # Hem nokta hem virgül varsa (Binlik ayracı ve ondalık)
     if '.' in value_str and ',' in value_str:
         last_dot = value_str.rfind('.')
         last_comma = value_str.rfind(',')
 
         if last_comma > last_dot:
-            # Format: 1.250,50 (TR)
             value_str = value_str.replace('.', '').replace(',', '.')
         else:
-            # Format: 1,250.50 (US)
             value_str = value_str.replace(',', '')
     elif ',' in value_str:
         value_str = value_str.replace(',', '.')
@@ -87,21 +93,17 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
     pb = "TRY"
     kur = Decimal("1.0")
 
-    # --- 1) Objede direkt para birimi var mı? ---
     direct_pb = _pick_attr(obj, ["para_birimi", "currency", "doviz_cinsi", "doviz"])
     if direct_pb:
         pb = _normalize_currency(direct_pb)
 
-    # Satınalma/teklif üzerinden pb yakalama (mevcut mantığın korunmuş hali)
     if pb == "TRY":
         if hasattr(obj, 'satinalma') and obj.satinalma and getattr(obj.satinalma, "teklif", None):
             pb = _normalize_currency(getattr(obj.satinalma.teklif, "para_birimi", "TRY"))
 
-    # TRY ise kur 1
     if pb in ["TRY"]:
         return "TRY", Decimal("1.0")
 
-    # --- 2) Objede direkt kur alanı var mı? ---
     direct_kur = _pick_attr(obj, ["kur_degeri", "kur", "fx_rate", "doviz_kuru"])
     if direct_kur:
         try:
@@ -111,10 +113,6 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
         except Exception:
             pass
 
-    # --- 3) Objede TL karşılığı var mı? (kur türet) ---
-    # Örn: fat.genel_toplam = 12000 (USD), fat.genel_toplam_tl = 520320 (TRY)
-    # Bu varsa kur = tl / doviz
-    # Not: Alan adlarını geniş tuttum; sende varsa otomatik yakalar.
     total_foreign = _pick_attr(obj, ["genel_toplam", "tutar", "net_tutar", "odenecek_net_tutar"])
     total_try = _pick_attr(obj, ["genel_toplam_tl", "tutar_tl", "tl_karsiligi", "try_karsiligi", "toplam_tl"])
 
@@ -128,7 +126,6 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
     except Exception:
         pass
 
-    # --- 4) Satınalma/teklif üzerinden kur yakala ---
     if hasattr(obj, 'satinalma') and obj.satinalma and getattr(obj.satinalma, "teklif", None):
         teklif = obj.satinalma.teklif
         teklif_kur = _pick_attr(teklif, ["kur_degeri", "kur", "fx_rate"])
@@ -140,7 +137,6 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
             except Exception:
                 pass
 
-    # --- 5) En son: TCMB güncel kur ---
     try:
         k = guncel_kurlar.get(pb, Decimal("1.0"))
         k = to_decimal(k)
@@ -152,7 +148,87 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
     return pb, Decimal("1.0")
 
 
-# --- VIEW FONKSİYONLARI ---
+def _odeme_dagitim_supported():
+    return OdemeDagitim is not None
+
+
+def _odeme_allocated_ids():
+    """
+    Allocation bulunan odeme id'lerini döndürür.
+    (Çifte saymayı engellemek için kullanıyoruz)
+    """
+    if not _odeme_dagitim_supported():
+        return []
+    try:
+        return list(OdemeDagitim.objects.values_list("odeme_id", flat=True).distinct())
+    except Exception:
+        return []
+
+
+def _paid_tl_for_invoice(fat: Fatura) -> Decimal:
+    """
+    Bir faturaya yapılan toplam TL ödemeyi döndürür.
+    Öncelik: OdemeDagitim varsa onun üzerinden hesaplar.
+    Eski sistem: Odeme.fatura üzerinden bağlanan (allocation'sız) ödemeler de dahil edilir.
+    """
+    toplam = Decimal("0.00")
+
+    allocated_ids = _odeme_allocated_ids()
+
+    # 1) Allocation üzerinden
+    if _odeme_dagitim_supported():
+        try:
+            t = OdemeDagitim.objects.filter(fatura=fat).aggregate(s=Sum("tutar"))["s"] or Decimal("0")
+            toplam += to_decimal(t)
+        except Exception:
+            pass
+
+    # 2) Eski sistem direct ödeme (allocation yoksa)
+    try:
+        qs = Odeme.objects.filter(fatura=fat)
+        if allocated_ids:
+            qs = qs.exclude(id__in=allocated_ids)
+        t2 = qs.aggregate(s=Sum("tutar"))["s"] or Decimal("0")
+        toplam += to_decimal(t2)
+    except Exception:
+        pass
+
+    return to_decimal(toplam)
+
+
+def _recalc_invoice_odenen_tutar_orj(fat: Fatura, guncel_kurlar: dict):
+    """
+    Senin sisteminde fat.odenen_tutar 'ORJ' (döviz) tutuluyor.
+    Bu yüzden TL toplamını -> kur ile orj'e çevirip fatura.odenen_tutar'ı idempotent güncelliyoruz.
+
+    Not: Kur 'güncel' mantıkla ilerliyor; mevcut mimarine uyumlu.
+    """
+    try:
+        pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
+        if kur and to_decimal(kur) > 0:
+            paid_tl = _paid_tl_for_invoice(fat)
+            fat.odenen_tutar = (to_decimal(paid_tl) / to_decimal(kur)).quantize(Decimal("0.01"))
+        else:
+            fat.odenen_tutar = Decimal("0.00")
+        fat.save(update_fields=["odenen_tutar"])
+    except Exception:
+        pass
+
+
+def _invoice_total_tl(fat: Fatura, guncel_kurlar: dict) -> Decimal:
+    pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
+    return (to_decimal(fat.genel_toplam) * to_decimal(kur)).quantize(Decimal("0.01"))
+
+
+def _invoice_remaining_tl(fat: Fatura, guncel_kurlar: dict) -> Decimal:
+    total_tl = _invoice_total_tl(fat, guncel_kurlar)
+    paid_tl = _paid_tl_for_invoice(fat)
+    return max(to_decimal(total_tl) - to_decimal(paid_tl), Decimal("0.00"))
+
+
+# =========================================================
+# VIEW FONKSİYONLARI
+# =========================================================
 
 @login_required
 def hakedis_ekle(request, siparis_id):
@@ -191,9 +267,10 @@ def hakedis_ekle(request, siparis_id):
 @login_required
 def odeme_yap(request):
     """
-    ÖDEME EKRANI (TAMİR EDİLMİŞ VERSİYON)
-    - 100 Katı Hatası Giderildi (clean_currency_input)
-    - Dövizli Faturaların TL Karşılığı Düzeltildi (get_smart_exchange_rate)
+    ÖDEME EKRANI
+    - TL ödeme kaydı
+    - Döviz faturaları TL karşılığı gösterim
+    - (Yeni) OdemeDagitim varsa seçilen faturalar için allocation oluşturur
     """
     if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
@@ -253,18 +330,18 @@ def odeme_yap(request):
             # --- 2. FATURALAR ---
             faturalar = Fatura.objects.filter(tedarikci=secilen_tedarikci).order_by('tarih')
             for fat in faturalar:
-                odenen_db = Odeme.objects.filter(fatura=fat).aggregate(toplam=Sum('tutar'))['toplam'] or Decimal('0')
-                odenen_field = to_decimal(getattr(fat, 'odenen_tutar', 0))
-                mevcut_odenen = max(odenen_db, odenen_field)
-
-                kalan_orj = to_decimal(fat.genel_toplam) - to_decimal(mevcut_odenen)
-
-                if kalan_orj > 0.1:
+                kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
+                if kalan_tl > Decimal("0.1"):
                     pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-                    tl_karsiligi = kalan_orj * kur
+
+                    kalan_orj = None
+                    try:
+                        kalan_orj = to_decimal(kalan_tl) / to_decimal(kur) if to_decimal(kur) > 0 else None
+                    except Exception:
+                        pass
 
                     aciklama_text = fat.aciklama or ""
-                    if pb != 'TRY':
+                    if pb != 'TRY' and kalan_orj is not None:
                         aciklama_text += f" <br><span class='badge bg-warning text-dark'>Orj: {kalan_orj:,.2f} {pb} (Kur: {kur})</span>"
 
                     acik_kalemler.append({
@@ -275,9 +352,9 @@ def odeme_yap(request):
                         'tutar_orj': kalan_orj,
                         'para_birimi': pb,
                         'kur': kur,
-                        'tutar': tl_karsiligi,
+                        'tutar': kalan_tl,  # TL
                     })
-                    toplam_guncel_borc_tl += tl_karsiligi
+                    toplam_guncel_borc_tl += kalan_tl
 
         except Exception as e:
             messages.error(request, f"Veri hatası: {str(e)}")
@@ -287,76 +364,95 @@ def odeme_yap(request):
         form = OdemeForm(request.POST)
         if form.is_valid():
             try:
-                odeme = form.save(commit=False)
-                if secilen_tedarikci:
-                    odeme.tedarikci = secilen_tedarikci
+                with transaction.atomic():
+                    odeme = form.save(commit=False)
+                    if secilen_tedarikci:
+                        odeme.tedarikci = secilen_tedarikci
 
-                raw_tutar = request.POST.get('tutar', '0')
-                odeme.tutar = clean_currency_input(raw_tutar)
-                odeme.para_birimi = 'TRY'  # Her zaman TL
-                odeme.save()
-                
-                if fatura_id and not odeme.fatura:
-                    try:
-                        odeme.fatura = Fatura.objects.get(id=int(fatura_id))
-                        odeme.save(update_fields=["fatura"])
-                    except Exception:
+                    raw_tutar = request.POST.get('tutar', '0')
+                    odeme.tutar = clean_currency_input(raw_tutar)
+                    odeme.para_birimi = 'TRY'
+                    odeme.save()
+
+                    # Eski davranış: direkt fatura_id geldiyse odeme.fatura bağla (geri uyum)
+                    if fatura_id and not odeme.fatura:
+                        try:
+                            odeme.fatura = Fatura.objects.get(id=int(fatura_id))
+                            odeme.save(update_fields=["fatura"])
+                        except Exception:
+                            pass
+
+                    dagitilacak_tl = to_decimal(odeme.tutar)
+                    secilenler = request.POST.getlist('secilen_kalem')
+
+                    if not secilenler and fatura_id:
+                        secilenler = [f"Fatura_{fatura_id}"]
+
+                    # Seçilen kalemler arasında FATURA varsa ve OdemeDagitim destekliyse -> allocation yaz
+                    # HAKEDİŞ için mevcut mantığın korunuyor (fiili_odenen_tutar ORJ artırılıyor)
+                    for secim in secilenler:
+                        if dagitilacak_tl <= 0:
+                            break
+                        try:
+                            tip, id_str = secim.split('_')
+                            obj_id = int(id_str)
+                        except ValueError:
+                            continue
+
+                        if tip == 'Hakedis':
+                            hk = Hakedis.objects.get(id=obj_id)
+                            _, kur = get_smart_exchange_rate(hk, guncel_kurlar)
+                            odenen_orj = dagitilacak_tl / kur if kur > 0 else dagitilacak_tl
+
+                            hk.fiili_odenen_tutar = to_decimal(hk.fiili_odenen_tutar) + to_decimal(odenen_orj)
+                            hk.save()
+
+                            if not odeme.bagli_hakedis:
+                                odeme.bagli_hakedis = hk
+                                odeme.save(update_fields=["bagli_hakedis"])
+
+                            dagitilacak_tl -= (to_decimal(odenen_orj) * to_decimal(kur))
+
+                        elif tip == 'Fatura':
+                            fat = Fatura.objects.get(id=obj_id)
+
+                            # Bu faturanın kalan TL tutarı kadar dağıtalım
+                            kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
+                            if kalan_tl <= Decimal("0.01"):
+                                continue
+
+                            pay_tl = min(dagitilacak_tl, kalan_tl)
+
+                            # (Yeni) Allocation tablosu varsa yaz
+                            if _odeme_dagitim_supported():
+                                OdemeDagitim.objects.create(
+                                    odeme=odeme,
+                                    fatura=fat,
+                                    tutar=to_decimal(pay_tl),
+                                    tarih=odeme.tarih,
+                                    aciklama=(odeme.aciklama or "")
+                                )
+
+                            # Geri uyum: fat.odenen_tutar ORJ alanını idempotent güncelle
+                            _recalc_invoice_odenen_tutar_orj(fat, guncel_kurlar)
+
+                            if not odeme.fatura:
+                                odeme.fatura = fat
+                                odeme.save(update_fields=["fatura"])
+
+                            dagitilacak_tl -= to_decimal(pay_tl)
+
+                    # Kalan dagitilacak_tl > 0 ise: bu avanstır (boşta kalır)
+                    if dagitilacak_tl > Decimal("0.01"):
+                        # odeme zaten kaydedildi; allocation yazmadık -> avans gibi durur
                         pass
-
-                dagitilacak_tl = odeme.tutar
-                secilenler = request.POST.getlist('secilen_kalem')
-
-                if not secilenler and fatura_id:
-                    secilenler = [f"Fatura_{fatura_id}"]
-
-                for secim in secilenler:
-                    if dagitilacak_tl <= 0:
-                        break
-                    try:
-                        tip, id_str = secim.split('_')
-                        obj_id = int(id_str)
-                    except ValueError:
-                        continue
-
-                    if tip == 'Hakedis':
-                        hk = Hakedis.objects.get(id=obj_id)
-                        _, kur = get_smart_exchange_rate(hk, guncel_kurlar)
-                        odenen_orj = dagitilacak_tl / kur if kur > 0 else dagitilacak_tl
-
-                        hk.fiili_odenen_tutar = to_decimal(hk.fiili_odenen_tutar) + odenen_orj
-                        hk.save()
-
-                        if not odeme.bagli_hakedis:
-                            odeme.bagli_hakedis = hk
-                            odeme.save()
-
-                        dagitilacak_tl -= (odenen_orj * kur)
-
-                    elif tip == 'Fatura':
-                        fat = Fatura.objects.get(id=obj_id)
-
-                        _, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-                        odenen_orj = dagitilacak_tl / kur if kur > 0 else dagitilacak_tl
-
-                        if hasattr(fat, 'odenen_tutar'):
-                            mevcut = to_decimal(getattr(fat, 'odenen_tutar', 0))
-                            fat.odenen_tutar = mevcut + odenen_orj
-                            if fat.odenen_tutar >= (to_decimal(fat.genel_toplam) - Decimal('0.5')):
-                                if hasattr(fat, 'durum'):
-                                    fat.durum = 'odendi'
-                            fat.save()
-
-                        if not odeme.fatura:
-                            odeme.fatura = fat
-                            odeme.save()
-
-                        dagitilacak_tl -= (odenen_orj * kur)
 
                 messages.success(request, f"✅ {odeme.tutar} TL tutarında ödeme işlendi.")
                 return redirect('finans_dashboard')
 
             except Exception as e:
                 messages.error(request, f"Kayıt hatası: {str(e)}")
+
     else:
         initial_data = {
             'tarih': timezone.now().date(),
@@ -384,6 +480,109 @@ def odeme_yap(request):
 
 
 @login_required
+def avans_mahsup(request, tedarikci_id):
+    """
+    AVANS MAHSUP EKRANI
+    - Avans (allocation'sız) ödemeleri listeler
+    - Açık faturalar listeler
+    - Seçilen avansı seçilen faturalarla FIFO mantığıyla dağıtır (OdemeDagitim varsa)
+    """
+    if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
+        return redirect('erisim_engellendi')
+
+    if not _odeme_dagitim_supported():
+        messages.error(request, "Mahsup (avans eşleştirme) için OdemeDagitim modeli eklenmemiş. Önce migration yapılmalı.")
+        return redirect('finans_dashboard')
+
+    tedarikci = get_object_or_404(Tedarikci, id=tedarikci_id)
+    guncel_kurlar = tcmb_kur_getir()
+
+    allocated_ids = _odeme_allocated_ids()
+
+    # Avans = bu tedarikçide olup allocation'ı olmayan ödemeler
+    avanslar = Odeme.objects.filter(tedarikci=tedarikci)
+    if allocated_ids:
+        avanslar = avanslar.exclude(id__in=allocated_ids)
+    # İstersen fatura bağlı olanları da hariç tutabilirsin; ben dahil bıraktım (bazı kullanıcılar yanlışlıkla bağlayabiliyor)
+    avanslar = avanslar.order_by('tarih', 'id')
+
+    # Açık faturalar
+    faturalar = []
+    for fat in Fatura.objects.filter(tedarikci=tedarikci).order_by('tarih', 'id'):
+        kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
+        if kalan_tl > Decimal("0.01"):
+            pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
+            toplam_tl = _invoice_total_tl(fat, guncel_kurlar)
+            faturalar.append({
+                "id": fat.id,
+                "no": fat.fatura_no,
+                "tarih": fat.tarih,
+                "pb": pb,
+                "kur": kur,
+                "toplam_tl": toplam_tl,
+                "kalan_tl": kalan_tl,
+                "aciklama": fat.aciklama or ""
+            })
+
+    if request.method == "POST":
+        try:
+            with transaction.atomic():
+                odeme_id = int(request.POST.get("odeme_id"))
+                sec_fatura_ids = request.POST.getlist("fatura_id")
+
+                odeme = get_object_or_404(Odeme, id=odeme_id, tedarikci=tedarikci)
+
+                # Güvenlik: bu ödeme daha önce dağıtılmış mı?
+                if OdemeDagitim.objects.filter(odeme=odeme).exists():
+                    messages.error(request, "Bu ödeme daha önce mahsuplaştırılmış. Yeniden mahsup edilemez.")
+                    return redirect("avans_mahsup", tedarikci_id=tedarikci.id)
+
+                kalan_avans = to_decimal(odeme.tutar)
+
+                # FIFO: seçilen faturaları tarih sırasıyla ele al
+                sec_faturalar = Fatura.objects.filter(id__in=sec_fatura_ids, tedarikci=tedarikci).order_by("tarih", "id")
+
+                for fat in sec_faturalar:
+                    if kalan_avans <= Decimal("0.01"):
+                        break
+
+                    kalan_fatura_tl = _invoice_remaining_tl(fat, guncel_kurlar)
+                    if kalan_fatura_tl <= Decimal("0.01"):
+                        continue
+
+                    pay = min(kalan_avans, kalan_fatura_tl)
+
+                    OdemeDagitim.objects.create(
+                        odeme=odeme,
+                        fatura=fat,
+                        tutar=to_decimal(pay),
+                        tarih=timezone.now().date(),
+                        aciklama=f"Avans Mahsup (Ödeme #{odeme.id})"
+                    )
+
+                    _recalc_invoice_odenen_tutar_orj(fat, guncel_kurlar)
+
+                    kalan_avans -= to_decimal(pay)
+
+                if kalan_avans > Decimal("0.01"):
+                    messages.success(request, f"✅ Mahsup tamamlandı. Kalan avans: {kalan_avans:,.2f} TL")
+                else:
+                    messages.success(request, "✅ Mahsup tamamlandı. Avans tamamen kullanıldı.")
+
+            return redirect("avans_mahsup", tedarikci_id=tedarikci.id)
+
+        except Exception as e:
+            messages.error(request, f"Mahsup hatası: {str(e)}")
+            return redirect("avans_mahsup", tedarikci_id=tedarikci.id)
+
+    return render(request, "avans_mahsup.html", {
+        "tedarikci": tedarikci,
+        "avanslar": avanslar,
+        "faturalar": faturalar,
+    })
+
+
+@login_required
 def finans_dashboard(request):
     return redirect('odeme_dashboard')
 
@@ -391,36 +590,19 @@ def finans_dashboard(request):
 @login_required
 def cari_ekstre(request, tedarikci_id):
     """
-    CARİ EKSTRE - DOĞRU KUR MANTIĞI İLE
-    (Dövizli faturada genel_toplam döviz ise, TL karşılığı artık yanlış çıkmayacak.)
+    CARİ EKSTRE
+    - Faturalar TL borç olarak
+    - Ödemeler TL alacak olarak
+    - Allocation (OdemeDagitim) varsa ödemeler yine tek satır görünür; ekstre mantığı bozulmaz.
     """
     tedarikci = get_object_or_404(Tedarikci, id=tedarikci_id)
     hareketler = []
     guncel_kurlar = tcmb_kur_getir()
 
-    # 1. FATURALAR
+    # 1) FATURALAR (TL borç)
     for fat in Fatura.objects.filter(tedarikci=tedarikci):
         pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-
-        genel_toplam = to_decimal(fat.genel_toplam)
-
-        # 🔴 KRİTİK DÜZELTME
-        # Eğer pb TRY görünüyorsa ama faturaya yapılan TL ödeme,
-        # fatura tutarından çok büyükse → bu fatura dövizlidir
-        if pb == "TRY":
-            odenen_tl = (
-                Odeme.objects.filter(fatura=fat)
-                .aggregate(toplam=Sum("tutar"))["toplam"]
-                or Decimal("0")
-            )
-
-            if odenen_tl > genel_toplam * Decimal("1.5"):
-                # Bu bir döviz faturası → kur türet
-                kur = odenen_tl / genel_toplam
-                pb = "USD"  # veya istersen "DÖVİZ" yaz
-                
-
-        tl_borc = genel_toplam * kur
+        tl_borc = _invoice_total_tl(fat, guncel_kurlar)
 
         aciklama = f"Fatura #{fat.fatura_no}"
         if pb != 'TRY':
@@ -434,7 +616,7 @@ def cari_ekstre(request, tedarikci_id):
             'tip': 'fatura'
         })
 
-    # 2. HAKEDİŞLER
+    # 2) HAKEDİŞLER
     for hk in Hakedis.objects.filter(satinalma__teklif__tedarikci=tedarikci, onay_durumu=True):
         pb, kur = get_smart_exchange_rate(hk, guncel_kurlar)
         tl_borc = to_decimal(hk.odenecek_net_tutar) * to_decimal(kur)
@@ -451,12 +633,20 @@ def cari_ekstre(request, tedarikci_id):
             'tip': 'hakedis'
         })
 
-    # 3. ÖDEMELER (zaten TL kaydediyorsun)
+    # 3) ÖDEMELER (TL alacak)
     for o in Odeme.objects.filter(tedarikci=tedarikci):
         tl_alacak = to_decimal(o.tutar)
         aciklama = f"Ödeme ({o.get_odeme_turu_display()})"
         if o.aciklama:
             aciklama += f" - {o.aciklama}"
+
+        # Eğer bu ödeme allocation ile faturaya dağıtıldıysa küçük bir rozet gösterelim (opsiyonel)
+        if _odeme_dagitim_supported():
+            try:
+                if o.dagitimlar.exists():
+                    aciklama += f"<br><span class='badge bg-secondary'>Mahsup/Dağıtım var</span>"
+            except Exception:
+                pass
 
         hareketler.append({
             'tarih': o.tarih,
@@ -469,7 +659,7 @@ def cari_ekstre(request, tedarikci_id):
     hareketler.sort(key=lambda x: x['tarih'])
     bakiye = Decimal('0.00')
     for h in hareketler:
-        bakiye += (h['borc'] - h['alacak'])
+        bakiye += (to_decimal(h['borc']) - to_decimal(h['alacak']))
         h['bakiye'] = bakiye
 
     return render(request, 'cari_ekstre.html', {
@@ -482,7 +672,8 @@ def cari_ekstre(request, tedarikci_id):
 @login_required
 def odeme_dashboard(request):
     """
-    FİNANS KOKPİTİ - TAMAMEN DOLU VERSİYON
+    FİNANS KOKPİTİ
+    - Fatura kalan borç hesaplarında allocation destekli hesap kullanır.
     """
     if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
@@ -495,22 +686,15 @@ def odeme_dashboard(request):
 
     # A) Tüm Faturalar (Malzeme)
     for fat in Fatura.objects.all():
-        odenen = Odeme.objects.filter(fatura=fat).aggregate(toplam=Sum('tutar'))['toplam'] or Decimal('0')
-        odenen_field = to_decimal(getattr(fat, 'odenen_tutar', 0))
-        mevcut_odenen = max(odenen, odenen_field)
-
-        kalan_orj = to_decimal(fat.genel_toplam) - to_decimal(mevcut_odenen)
-
-        if kalan_orj > 0.1:
-            pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-            tl_tutar = kalan_orj * kur
-            toplam_borc_tl += tl_tutar
-            malzeme_borcu_tl += tl_tutar
+        kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
+        if kalan_tl > Decimal("0.01"):
+            toplam_borc_tl += kalan_tl
+            malzeme_borcu_tl += kalan_tl
 
     # B) Onaylı Hakedişler
     for hk in Hakedis.objects.filter(onay_durumu=True):
         kalan_orj = to_decimal(hk.odenecek_net_tutar) - to_decimal(hk.fiili_odenen_tutar)
-        if kalan_orj > 0.1:
+        if kalan_orj > Decimal("0.1"):
             pb, kur = get_smart_exchange_rate(hk, guncel_kurlar)
             tl_tutar = kalan_orj * kur
             toplam_borc_tl += tl_tutar
@@ -566,37 +750,51 @@ def get_tedarikci_bakiye(request, tedarikci_id):
 @login_required
 def odeme_sil(request, odeme_id):
     """
-    KRİTİK DÜZELTME:
-    fat.odenen_tutar senin sisteminde döviz (orj) tutuluyor (odeme_yap içinde odenen_orj ekliyorsun).
-    Ama burada TL'yi direkt düşüyordun. Bu yanlış.
-    Doğru olan: TL'yi kur ile dövize çevirip düşmek.
+    ÖDEME SİLME
+    - Allocation varsa önce dağıtımları siler, ilgili faturaları yeniden hesaplar.
+    - Sonra ödemeyi siler.
     """
     if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
 
+    guncel_kurlar = tcmb_kur_getir()
     odeme = get_object_or_404(Odeme, id=odeme_id)
 
-    if odeme.fatura and hasattr(odeme.fatura, 'odenen_tutar'):
-        fat = odeme.fatura
-        guncel_kurlar = tcmb_kur_getir()
-        _, kur = get_smart_exchange_rate(fat, guncel_kurlar)
+    try:
+        with transaction.atomic():
+            # 1) Allocation varsa, hangi faturaları etkilediğini bul
+            affected_faturas = []
+            if _odeme_dagitim_supported():
+                try:
+                    affected_faturas = list(
+                        Fatura.objects.filter(dagitimlar__odeme=odeme).distinct()
+                    )
+                except Exception:
+                    affected_faturas = []
 
-        # TL ödeme -> dövize çevir
-        odenen_orj = to_decimal(odeme.tutar) / to_decimal(kur) if to_decimal(kur) > 0 else to_decimal(odeme.tutar)
+                # Allocation'ları sil
+                try:
+                    OdemeDagitim.objects.filter(odeme=odeme).delete()
+                except Exception:
+                    pass
 
-        yeni = to_decimal(fat.odenen_tutar) - odenen_orj
-        fat.odenen_tutar = max(yeni, Decimal('0'))
+            # 2) Eğer eski sistemde odeme.fatura bağlıysa onu da etkilenmiş listesine ekle
+            if odeme.fatura:
+                try:
+                    if odeme.fatura not in affected_faturas:
+                        affected_faturas.append(odeme.fatura)
+                except Exception:
+                    pass
 
-        # Durum varsa geri çek
-        if hasattr(fat, 'durum'):
-            try:
-                if to_decimal(fat.odenen_tutar) < (to_decimal(fat.genel_toplam) - Decimal('0.5')):
-                    fat.durum = 'acik'
-            except Exception:
-                pass
+            # 3) Ödemeyi sil
+            odeme.delete()
 
-        fat.save()
+            # 4) Etkilenen faturaları idempotent yeniden hesapla
+            for fat in affected_faturas:
+                _recalc_invoice_odenen_tutar_orj(fat, guncel_kurlar)
 
-    odeme.delete()
-    messages.warning(request, "🗑️ Ödeme kaydı silindi.")
+        messages.warning(request, "🗑️ Ödeme kaydı silindi.")
+    except Exception as e:
+        messages.error(request, f"Silme hatası: {str(e)}")
+
     return redirect('finans_dashboard')

@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.db.models import Sum
 from decimal import Decimal
 import json
+from core.models import OdemeDagitim
 
 from .models import (
     Kategori, IsKalemi, Tedarikci, Teklif, SatinAlma, GiderKategorisi, Harcama, Odeme, 
@@ -171,3 +172,8 @@ class GiderKategorisiAdmin(admin.ModelAdmin):
 @admin.register(Hakedis)
 class HakedisAdmin(admin.ModelAdmin):
     list_display = ('satinalma', 'hakedis_no', 'tarih', 'onay_durumu')
+
+@admin.register(OdemeDagitim)
+class OdemeDagitimAdmin(admin.ModelAdmin):
+    list_display = ("id", "odeme", "fatura", "tutar", "tarih")
+    search_fields = ("odeme__tedarikci__firma_unvani", "fatura__fatura_no")

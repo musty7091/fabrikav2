@@ -1,0 +1,331 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load l10n %}
+
+{% block title %}Avans Mahsup{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="h4 mb-1">
+        <i class="fas fa-random text-primary me-2"></i>Avans Mahsup
+      </h1>
+      <div class="text-muted small">
+        <b>{{ tedarikci.firma_unvani }}</b> için avans ödemelerini açık faturalarla eşleştir.
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <a href="{% url 'odeme_yap' %}?tedarikci_id={{ tedarikci.id }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Ödeme Yap'a Dön
+      </a>
+      <a href="{% url 'cari_ekstre' tedarikci.id %}" class="btn btn-outline-dark">
+        <i class="fas fa-file-invoice-dollar me-1"></i> Ekstre
+      </a>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} py-2 small mb-2">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="row g-3">
+
+    <!-- SOL: Avanslar -->
+    <div class="col-lg-5">
+      <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-light">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="fw-bold">
+              <i class="fas fa-hand-holding-usd me-2 text-success"></i>Avans Ödemeler
+            </div>
+            <span class="badge bg-secondary">{{ avanslar|length }} kayıt</span>
+          </div>
+          <div class="small text-muted mt-1">
+            (Fatura bağlı değilse avans sayılır)
+          </div>
+        </div>
+
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+              <thead class="table-dark">
+                <tr>
+                  <th style="width:45px" class="text-center">Seç</th>
+                  <th>Tarih</th>
+                  <th>Açıklama</th>
+                  <th class="text-end">Tutar (TL)</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {% for a in avanslar %}
+                <tr style="cursor:pointer" onclick="toggleAvans('{{ a.id }}')">
+                  <td class="text-center" onclick="event.stopPropagation()">
+                    <!-- ✅ VIEW İLE UYUMLU: name="odeme_id" -->
+                    <input class="form-check-input avans-cb"
+                           type="radio"
+                           name="odeme_id"
+                           id="avans_{{ a.id }}"
+                           value="{{ a.id }}"
+                           data-tutar="{{ a.tutar_tl|unlocalize }}">
+                  </td>
+                  <td><small>{{ a.tarih|date:"d.m.Y" }}</small></td>
+                  <td>
+                    <div class="fw-bold">{{ a.odeme_turu }}</div>
+                    <div class="small text-muted">{{ a.aciklama }}</div>
+                  </td>
+                  <td class="text-end fw-bold text-success">
+                    {{ a.tutar_tl|floatformat:2|intcomma }}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center py-4 text-muted">
+                    Avans ödeme bulunamadı.
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+
+              <tfoot class="table-light">
+                <tr>
+                  <td colspan="3" class="text-end fw-bold">Seçilen Avans:</td>
+                  <td class="text-end fw-bold text-primary" id="secili-avans-tutar">0,00</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- FIFO formu (isteğe bağlı) -->
+        <div class="card-footer bg-white">
+          <form method="post" id="fifoForm">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="fifo">
+            <input type="hidden" name="odeme_id" id="fifo_odeme_id">
+            <button type="submit" class="btn btn-outline-primary w-100">
+              <i class="fas fa-magic me-1"></i> Otomatik Mahsup (FIFO)
+            </button>
+            <div class="small text-muted mt-2">
+              Seçilen avansı en eski açık faturadan başlayarak kapatır.
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- SAĞ: Faturalar -->
+    <div class="col-lg-7">
+      <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-light">
+          <div class="d-flex justify-content-between align-items-center">
+            <div class="fw-bold">
+              <i class="fas fa-file-invoice me-2 text-danger"></i>Açık Faturalar
+            </div>
+            <span class="badge bg-secondary">{{ faturalar|length }} kayıt</span>
+          </div>
+          <div class="small text-muted mt-1">
+            Bir veya birden fazla fatura seçebilirsin.
+          </div>
+        </div>
+
+        <form method="post" id="manualForm">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="manual">
+
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-striped table-hover mb-0 align-middle">
+                <thead class="table-dark">
+                  <tr>
+                    <th style="width:45px" class="text-center">Seç</th>
+                    <th>Tarih</th>
+                    <th>Fatura</th>
+                    <th>Açıklama</th>
+                    <th class="text-end">Kalan (TL)</th>
+                    <th class="text-end" style="width:160px">Bu faturaya mahsup</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {% for f in faturalar %}
+                  <tr>
+                    <td class="text-center">
+                      <!-- ✅ VIEW İLE UYUMLU: name="fatura_id" -->
+                      <input class="form-check-input fatura-cb"
+                             type="checkbox"
+                             name="fatura_id"
+                             value="{{ f.id }}"
+                             data-kalan="{{ f.kalan_tl|unlocalize }}"
+                             onchange="onFaturaToggle(this)">
+                    </td>
+                    <td><small>{{ f.tarih|date:"d.m.Y" }}</small></td>
+                    <td class="fw-bold">#{{ f.no }}</td>
+                    <td class="small text-muted">{{ f.aciklama }}</td>
+                    <td class="text-end fw-bold text-danger">
+                      {{ f.kalan_tl|floatformat:2|intcomma }}
+                    </td>
+                    <td class="text-end">
+                      <input type="number"
+                             step="0.01"
+                             min="0"
+                             name="dagitim_{{ f.id }}"
+                             id="dagitim_{{ f.id }}"
+                             class="form-control form-control-sm text-end dagitim-input"
+                             placeholder="0.00"
+                             disabled>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">
+                      Açık fatura bulunamadı.
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+
+                <tfoot class="table-light">
+                  <tr>
+                    <td colspan="4" class="text-end fw-bold">Toplam Mahsup:</td>
+                    <td colspan="2" class="text-end fw-bold" id="toplam-mahsup">0,00</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div class="card-footer bg-white">
+            <button type="submit" class="btn btn-success w-100 py-2" onclick="return validateMahsup()">
+              <i class="fas fa-check me-1"></i> Mahsup Et
+            </button>
+            <div class="small text-muted mt-2">
+              Seçilen avans tutarı kadar dağıtım yapabilirsin. Fazlasına izin vermez.
+            </div>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function formatTR(n){
+    try { return Number(n).toLocaleString('tr-TR', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+    catch(e){ return n; }
+  }
+
+  function getSelectedAvans(){
+    const checked = document.querySelector('.avans-cb:checked');
+    if(!checked) return {id:null, tutar:0};
+    const tutar = parseFloat((checked.getAttribute('data-tutar')||"0").replace(',', '.'));
+    return {id: checked.value, tutar: isNaN(tutar)?0:tutar};
+  }
+
+  function toggleAvans(id){
+    const el = document.getElementById('avans_'+id);
+    if(el){ el.checked = true; refreshSummary(); }
+  }
+
+  function onFaturaToggle(cb){
+    const fid = cb.value;
+    const input = document.getElementById('dagitim_'+fid);
+    if(!input) return;
+
+    if(cb.checked){
+      input.disabled = false;
+      const kalan = parseFloat((cb.getAttribute('data-kalan')||"0").replace(',', '.'));
+      input.value = (isNaN(kalan) ? 0 : kalan).toFixed(2);
+    } else {
+      input.disabled = true;
+      input.value = "";
+    }
+    refreshSummary();
+  }
+
+  function refreshSummary(){
+    const av = getSelectedAvans();
+    document.getElementById('secili-avans-tutar').innerText = formatTR(av.tutar);
+
+    // FIFO formuna da set edelim
+    const fifo = document.getElementById('fifo_odeme_id');
+    if(fifo) fifo.value = av.id || "";
+
+    let toplam = 0;
+    document.querySelectorAll('.dagitim-input').forEach(inp=>{
+      if(inp.disabled) return;
+      const v = parseFloat((inp.value||"0").replace(',', '.'));
+      if(!isNaN(v)) toplam += v;
+    });
+    document.getElementById('toplam-mahsup').innerText = formatTR(toplam);
+  }
+
+  function validateMahsup(){
+    const av = getSelectedAvans();
+    if(!av.id){
+      alert("Önce bir avans seçmelisin.");
+      return false;
+    }
+
+    const anyChecked = document.querySelectorAll('.fatura-cb:checked').length > 0;
+    if(!anyChecked){
+      alert("En az 1 fatura seçmelisin.");
+      return false;
+    }
+
+    let toplam = 0;
+    let valid = true;
+
+    document.querySelectorAll('.fatura-cb:checked').forEach(cb=>{
+      const fid = cb.value;
+      const input = document.getElementById('dagitim_'+fid);
+      if(!input || input.disabled) return;
+
+      const v = parseFloat((input.value||"0").replace(',', '.'));
+      const kalan = parseFloat((cb.getAttribute('data-kalan')||"0").replace(',', '.'));
+
+      if(isNaN(v) || v <= 0){
+        valid = false;
+      } else if(!isNaN(kalan) && v > kalan + 0.01){
+        alert("Bir faturaya mahsup edilen tutar, o faturanın kalanını geçemez.");
+        valid = false;
+      } else {
+        toplam += v;
+      }
+    });
+
+    if(!valid){
+      alert("Dağıtım tutarlarını kontrol et. (0 olamaz / kalanını geçemez)");
+      return false;
+    }
+
+    if(toplam > av.tutar + 0.01){
+      alert("Toplam mahsup, seçilen avans tutarını geçemez.");
+      return false;
+    }
+
+    return true;
+  }
+
+  document.addEventListener("DOMContentLoaded", function(){
+    document.querySelectorAll('.avans-cb').forEach(r=>{
+      r.addEventListener('change', refreshSummary);
+    });
+    document.querySelectorAll('.dagitim-input').forEach(inp=>{
+      inp.addEventListener('input', refreshSummary);
+    });
+    refreshSummary();
+  });
+</script>
+
+{% endblock %}

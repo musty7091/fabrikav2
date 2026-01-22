@@ -93,6 +93,7 @@ urlpatterns = [
     path('odeme/yap/', finans_payments.odeme_yap, name='odeme_yap'),
     path('cari/ekstre/<int:tedarikci_id>/', finans_payments.cari_ekstre, name='cari_ekstre'),
     path('api/tedarikci-bakiye/<int:tedarikci_id>/', views.get_tedarikci_bakiye, name='api_tedarikci_bakiye'),
+    path("finans/avans-mahsup/<int:tedarikci_id>/", finans_payments.avans_mahsup, name="avans_mahsup"),
     # ========================================================
 
     # 11. Tanımlamalar (CRUD)

@@ -42,6 +42,14 @@
                             <h3 class="fw-bold text-danger">
                                 {{ toplam_borc_tl|floatformat:2|intcomma }} ₺
                             </h3>
+
+                            <!-- ✅ AVANS MAHSUP BUTONU -->
+                            <div class="d-grid mt-2">
+                                <a href="{% url 'avans_mahsup' secilen_tedarikci.id %}"
+                                class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-random me-1"></i> Avans Mahsup
+                                </a>
+                            </div>
                         </div>
                     {% endif %}
                 </div>
