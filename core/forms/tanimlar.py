@@ -34,7 +34,7 @@ class TedarikciForm(forms.ModelForm):
         model = Tedarikci
         fields = ['firma_unvani', 'yetkili_kisi', 'telefon', 'adres']
         widgets = {
-            'firma_unvani': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: ABC İnşaat Ltd. Şti.', 'aria-label': 'Firma Unvanı'}),
+            'firma_unvani': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: İnşaat Ltd. Şti.', 'aria-label': 'Firma Unvanı'}),
             'yetkili_kisi': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ad Soyad', 'aria-label': 'Yetkili Kişi'}),
             'telefon': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '05XX XXX XX XX', 'aria-label': 'Telefon'}),
             'adres': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'aria-label': 'Adres'}),
@@ -47,7 +47,7 @@ class MalzemeForm(forms.ModelForm):
         widgets = {
             'kategori': forms.Select(attrs={'class': 'form-select', 'aria-label': 'Kategori'}),
             'isim': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: Saten Alçı', 'aria-label': 'İsim'}),
-            'marka': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: Knauf', 'aria-label': 'Marka'}),
+            'marka': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Örn: Vitra', 'aria-label': 'Marka'}),
             'birim': forms.Select(attrs={'class': 'form-select', 'aria-label': 'Birim'}),
             'kdv_orani': forms.Select(attrs={'class': 'form-select', 'aria-label': 'KDV Oranı'}),
             'kritik_stok': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': '10', 'aria-label': 'Kritik Stok'}),
