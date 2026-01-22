@@ -2,17 +2,133 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.utils import timezone
-from core.models import MalzemeTalep, Teklif, Odeme, Harcama
+from django.db.models import Sum, F
+from decimal import Decimal
+from datetime import date
+from django.core.exceptions import ObjectDoesNotExist
+
+# --- MODELLERİN EKSİKSİZ IMPORT EDİLMESİ ---
+from core.models import (
+    MalzemeTalep, Teklif, Odeme, Harcama, 
+    SatinAlma, Fatura, Malzeme, Hakedis, Depo, Tedarikci
+)
 from .guvenlik import yetki_kontrol
+from core.utils import to_decimal, tcmb_kur_getir
 
 def erisim_engellendi(request):
     return render(request, 'erisim_engellendi.html')
 
 @login_required
 def dashboard(request):
-    bekleyen_talep_sayisi = MalzemeTalep.objects.filter(durum='bekliyor').count()
-    context = {'bekleyen_talep_sayisi': bekleyen_talep_sayisi}
+    """
+    Ana Dashboard (Operasyonel Özet)
+    """
+    # 1. Bekleyen Talepler
+    bekleyen_talep = MalzemeTalep.objects.filter(durum='bekliyor').count()
+    
+    # 2. Tamamlanmamış Siparişler
+    # Modelde alan adı 'teslimat_durumu' olduğu için düzeltildi.
+    bekleyen_siparis = SatinAlma.objects.exclude(teslimat_durumu='tamamlandi').count()
+    
+    # 3. Ödenmemiş Faturalar
+    # Fatura modelinde 'durum' alanı yok. Bu yüzden (Ödenen < Genel Toplam) mantığı kuruldu.
+    acik_fatura_sayisi = Fatura.objects.filter(odenen_tutar__lt=F('genel_toplam')).count()
+    
+    # 4. Kritik Stok Sayısı
+    # Stok property olduğu için Python tarafında sayıyoruz
+    kritik_stok_sayisi = 0
+    try:
+        # Performans için kritik stok tanımlı olanları çekip kontrol edelim
+        for m in Malzeme.objects.filter(kritik_stok__gt=0):
+            if m.stok <= m.kritik_stok:
+                kritik_stok_sayisi += 1
+    except:
+        pass
+
+    context = {
+        'bekleyen_talep_sayisi': bekleyen_talep,
+        'bekleyen_siparisler': bekleyen_siparis,
+        'onay_bekleyen_faturalar': acik_fatura_sayisi,
+        'kritik_stok': kritik_stok_sayisi,
+    }
     return render(request, 'dashboard.html', context)
+
+@login_required
+def finans_dashboard(request):
+    """
+    FİNANS KOKPİTİ (NİHAİ VERSİYON)
+    Borçları TL, USD, EUR olarak ayrı ayrı hesaplar ve gösterir.
+    """
+    if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
+        return redirect('erisim_engellendi')
+
+    # --- 1. Borçları Para Birimine Göre Hesapla ---
+    borc_listesi = {} # {'TL': 1000, 'USD': 500}
+
+    # A) Açık Faturalar (Ödenen < Genel Toplam)
+    acik_faturalar = Fatura.objects.filter(odenen_tutar__lt=F('genel_toplam'))
+    
+    for fat in acik_faturalar:
+        # Para birimi tespiti (Güvenli)
+        curr = 'TL'
+        try:
+            if fat.satinalma and fat.satinalma.teklif:
+                curr = fat.satinalma.teklif.para_birimi
+        except ObjectDoesNotExist:
+            pass # Varsayılan TL kalır
+
+        # Kalan tutarı hesapla
+        # En garantisi veritabanındaki Odeme tablosunu toplamaktır
+        odenen_db = Odeme.objects.filter(fatura=fat).aggregate(toplam=Sum('tutar'))['toplam'] or Decimal('0')
+        odenen_field = to_decimal(fat.odenen_tutar)
+        
+        # Hangisi güncelse onu al
+        mevcut_odenen = max(odenen_db, odenen_field)
+        
+        kalan = to_decimal(fat.genel_toplam) - to_decimal(mevcut_odenen)
+        
+        if kalan > 0.1:
+            if curr not in borc_listesi:
+                borc_listesi[curr] = Decimal('0')
+            borc_listesi[curr] += kalan
+
+    # B) Onaylı Hakedişler
+    acik_hakedisler = Hakedis.objects.filter(onay_durumu=True)
+    
+    for hk in acik_hakedisler:
+        curr = 'TL'
+        try:
+            if hk.satinalma and hk.satinalma.teklif:
+                curr = hk.satinalma.teklif.para_birimi
+        except ObjectDoesNotExist:
+            pass
+            
+        kalan = to_decimal(hk.odenecek_net_tutar) - to_decimal(hk.fiili_odenen_tutar)
+        
+        if kalan > 0.1:
+            if curr not in borc_listesi:
+                borc_listesi[curr] = Decimal('0')
+            borc_listesi[curr] += kalan
+
+    # --- 2. Diğer İstatistikler ---
+    toplam_odeme_bu_ay = Odeme.objects.filter(
+        tarih__month=date.today().month,
+        tarih__year=date.today().year
+    ).aggregate(toplam=Sum('tutar'))['toplam'] or 0
+
+    son_odemeler = Odeme.objects.all().order_by('-tarih')[:6]
+    
+    # Bekleyen faturaları vade tarihine göre çek
+    bekleyen_faturalar = Fatura.objects.filter(odenen_tutar__lt=F('genel_toplam')).order_by('tarih')[:6]
+
+    context = {
+        'borc_listesi': borc_listesi, 
+        'toplam_odeme_bu_ay': toplam_odeme_bu_ay,
+        'son_odemeler': son_odemeler,
+        'bekleyen_faturalar': bekleyen_faturalar,
+        'kurlar': tcmb_kur_getir(),
+    }
+    return render(request, 'finans_dashboard.html', context)
 
 @login_required
 def islem_sonuc(request, model_name, pk):
@@ -25,6 +141,7 @@ def belge_yazdir(request, model_name, pk):
     
     def hesapla_bakiye(tedarikci):
         if not tedarikci: return 0
+        # Basit bakiye hesabı
         borc = sum(t.toplam_fiyat_tl for t in tedarikci.teklifler.filter(durum='onaylandi'))
         odenen = float(sum(o.tutar for o in tedarikci.odemeler.all()))
         return borc - odenen
@@ -56,14 +173,19 @@ def belge_yazdir(request, model_name, pk):
         detay = f"({obj.get_odeme_turu_display()})"
         if obj.odeme_turu == 'cek': detay += f" - Vade: {obj.vade_tarihi}"
         bakiye = hesapla_bakiye(obj.tedarikci)
-        ilgili_is = f"Hakediş #{obj.bagli_hakedis.hakedis_no}" if obj.bagli_hakedis else "Genel / Mahsuben (Cari Hesaba)"
+        
+        ilgili_is = "Genel / Mahsuben"
+        if obj.bagli_hakedis:
+            ilgili_is = f"Hakediş #{obj.bagli_hakedis.hakedis_no}"
+        elif obj.fatura: # Modeli güncellediğimiz için artık bu alan var
+            ilgili_is = f"Fatura #{obj.fatura.fatura_no}"
             
         belge_data = {
             'İşlem No': f"OD-{obj.id}",
             'İşlem Tarihi': obj.tarih,
             'Yazdırılma Zamanı': timezone.now(),
             'Kime Ödendi': obj.tedarikci.firma_unvani,
-            'İlgili İş / Hakediş': ilgili_is,
+            'İlgili İş / Evrak': ilgili_is,
             'Ödeme Tutarı': f"{obj.tutar:,.2f} {obj.para_birimi}",
             'Ödeme Yöntemi': detay,
             'Açıklama': obj.aciklama,

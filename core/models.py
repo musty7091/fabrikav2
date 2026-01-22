@@ -782,7 +782,10 @@ class Odeme(models.Model):
     ]
 
     tedarikci = models.ForeignKey(Tedarikci, on_delete=models.CASCADE, related_name='odemeler', verbose_name="Ödenen Firma")
+    
+    # EKLENEN KRİTİK ALANLAR:
     bagli_hakedis = models.ForeignKey('Hakedis', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="İlgili Hakediş")
+    fatura = models.ForeignKey('Fatura', on_delete=models.SET_NULL, null=True, blank=True, related_name='odemeler', verbose_name="İlgili Fatura")
 
     tarih = models.DateField(default=timezone.now, verbose_name="İşlem Tarihi")
     odeme_turu = models.CharField(max_length=10, choices=ODEME_TURLERI, default='nakit', verbose_name="Ödeme Yöntemi")

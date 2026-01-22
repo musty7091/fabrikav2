@@ -1,100 +1,284 @@
 {% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Serbest Fatura Girişi{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Serbest Fatura Girişi (Manuel)</h1>
+<div class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0 text-gray-800">
+                <i class="fas fa-file-invoice text-primary me-2"></i>SERBEST FATURA GİRİŞİ
+            </h1>
+            <p class="text-muted small mb-0">Depo girişi yapılacak çok kalemli faturaları buradan işleyebilirsiniz.</p>
+        </div>
+        <a href="{% url 'dashboard' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i> Ana Menü
+        </a>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" id="faturaForm">
+        {% csrf_token %}
+        
+        <div class="card shadow mb-4 border-0 border-top border-primary border-3">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 fw-bold text-primary">1. Fatura ve Tedarikçi Bilgileri</h6>
+            </div>
+            <div class="card-body">
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Tedarikçi Firma</label>
+                        {{ form.tedarikci }}
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-danger">Giriş Yapılacak Depo</label>
+                        {{ form.depo }}
+                        <div class="form-text">Stoklar bu depoya eklenecektir.</div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Fatura No</label>
+                        {{ form.fatura_no }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Fatura Tarihi</label>
+                        {{ form.tarih }}
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold">Dosya / Görsel</label>
+                        {{ form.dosya }}
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Açıklama</label>
+                        {{ form.aciklama }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4 border-0">
+            <div class="card-header bg-secondary text-white py-2 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 fw-bold"><i class="fas fa-list me-2"></i>Fatura Kalemleri (Malzeme Girişi)</h6>
+                <span class="badge bg-light text-dark">Otomatik Hesaplanır</span>
+            </div>
+            <div class="card-body p-0">
+                {{ formset.management_form }}
+                
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped align-middle mb-0" id="kalemTablosu">
+                        <thead class="bg-light text-dark">
+                            <tr>
+                                <th style="width: 30%; min-width: 250px;">Malzeme / Hizmet</th>
+                                <th style="width: 12%;">Miktar</th>
+                                <th style="width: 15%;">Birim Fiyat</th>
+                                <th style="width: 10%;">KDV %</th>
+                                <th style="width: 15%;">Satır Toplamı</th>
+                                <th>Açıklama</th>
+                                <th style="width: 5%;" class="text-center">Sil</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for f in formset %}
+                                <tr class="kalem-satiri">
+                                    {{ f.id }}
+                                    
+                                    <td>
+                                        {{ f.malzeme }}
+                                        {% if f.malzeme.errors %}
+                                            <div class="text-danger small">{{ f.malzeme.errors }}</div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ f.miktar }}
+                                    </td>
+                                    <td>
+                                        <div class="input-group input-group-sm">
+                                            {{ f.fiyat }}
+                                            <span class="input-group-text">₺</span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {{ f.kdv_oran }}
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm satir-toplam fw-bold text-end" readonly value="0.00">
+                                    </td>
+                                    <td>
+                                        {{ f.aciklama }}
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-none">{{ f.DELETE }}</div>
+                                        <button type="button" class="btn btn-sm btn-outline-danger sil-btn" title="Satırı Sil">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="bg-light fw-bold">
+                            <tr>
+                                <td colspan="4" class="text-end py-3">ARA TOPLAM (KDV HARİÇ):</td>
+                                <td class="text-end text-primary fs-5 py-3" id="genelAraToplam">0.00 ₺</td>
+                                <td colspan="2"></td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" class="text-end py-3">TOPLAM KDV:</td>
+                                <td class="text-end text-danger fs-5 py-3" id="genelKDV">0.00 ₺</td>
+                                <td colspan="2"></td>
+                            </tr>
+                            <tr class="table-dark">
+                                <td colspan="4" class="text-end py-3">GENEL TOPLAM:</td>
+                                <td class="text-end text-success fs-4 py-3" id="genelToplam">0.00 ₺</td>
+                                <td colspan="2"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer bg-white border-top-0 py-3">
+                <small class="text-muted"><i class="fas fa-info-circle me-1"></i> Boş bıraktığınız satırlar kaydedilmeyecektir.</small>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-flex justify-content-md-end mb-5">
+            <button type="reset" class="btn btn-light border btn-lg px-4">Temizle</button>
+            <button type="submit" class="btn btn-primary btn-lg px-5 shadow">
+                <i class="fas fa-save me-2"></i> Faturayı Kaydet
+            </button>
+        </div>
+
+    </form>
 </div>
-
-{% if messages %}
-    {% for message in messages %}
-        <div class="alert alert-{{ message.tags }}">{{ message }}</div>
-    {% endfor %}
-{% endif %}
-
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    
-    <div class="card mb-4 shadow-sm">
-        <div class="card-header bg-light">
-            <h5 class="mb-0">Fatura Bilgileri</h5>
-        </div>
-        <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-4">
-                    <label class="form-label">Tedarikçi</label>
-                    {{ form.tedarikci }}
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Hangi Depoya Girecek?</label>
-                    {{ form.depo }}
-                    <small class="text-muted">Stoklar bu depoya eklenecektir.</small>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Fatura No</label>
-                    {{ form.fatura_no }}
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Tarih</label>
-                    {{ form.tarih }}
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Dosya</label>
-                    {{ form.dosya }}
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Açıklama</label>
-                    {{ form.aciklama }}
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="card mb-3 shadow-sm">
-        <div class="card-header bg-secondary text-white">
-            <h5 class="mb-0">Fatura Kalemleri</h5>
-        </div>
-        <div class="card-body">
-            {{ formset.management_form }}
-            <div class="table-responsive">
-                <table class="table table-bordered table-hover" id="kalemTable">
-                    <thead>
-                        <tr>
-                            <th style="width: 30%;">Malzeme</th>
-                            <th>Miktar</th>
-                            <th>Birim Fiyat (KDV Hariç)</th>
-                            <th>KDV (%)</th>
-                            <th>Açıklama</th>
-                            <th>Sil</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for f in formset %}
-                            <tr>
-                                <td>{{ f.malzeme }} {{ f.id }}</td> <td>{{ f.miktar }}</td>
-                                <td>{{ f.fiyat }}</td>
-                                <td>{{ f.kdv_oran }}</td>
-                                <td>{{ f.aciklama }}</td>
-                                <td>{{ f.DELETE }}</td>
-                            </tr>
-                            {% if f.errors %}
-                            <tr>
-                                <td colspan="6" class="text-danger small">{{ f.errors }}</td>
-                            </tr>
-                            {% endif %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <button type="submit" class="btn btn-success w-100 btn-lg">💾 Faturayı ve Stokları Kaydet</button>
-</form>
 
 <script>
     document.addEventListener("DOMContentLoaded", function() {
-        // Eğer projenizde jQuery/Select2 varsa aktif edin
-        // $('.select2').select2();
+        
+        // 1. SELECT2 BAŞLATMA (HATA KORUMALI)
+        // Eğer jQuery yoksa scriptin geri kalanı bozulmasın diye try-catch kullanıyoruz.
+        try {
+            if (typeof $ !== 'undefined' && $.fn.select2) {
+                $('.select2').select2({
+                    theme: "bootstrap-5",
+                    width: '100%',
+                    placeholder: "Seçiniz..."
+                });
+            } else {
+                console.warn("jQuery veya Select2 bulunamadı, standart seçim kutuları kullanılacak.");
+            }
+        } catch (e) {
+            console.error("Select2 başlatma hatası:", e);
+        }
+
+        // 2. OTOMATİK HESAPLAMA FONKSİYONLARI
+        const satirlar = document.querySelectorAll('.kalem-satiri');
+        
+        function hesapla() {
+            let toplamTutar = 0;
+            let toplamKDV = 0;
+
+            satirlar.forEach(row => {
+                // Silme kontrolü: Eğer silme kutusu işaretliyse hesaba katma
+                const silCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+                if (silCheckbox && silCheckbox.checked) {
+                    row.style.opacity = "0.3"; 
+                    row.querySelector('.satir-toplam').value = "0.00";
+                    return; // Döngünün bu adımını atla
+                } else {
+                    row.style.opacity = "1";
+                }
+
+                // Değerleri al (Virgül/Nokta güvenliği için parseFloat yerine Number())
+                // Django NumberInput widget kullandığı için value her zaman nokta ile gelir.
+                const miktarInput = row.querySelector('input[name$="-miktar"]');
+                const fiyatInput = row.querySelector('input[name$="-fiyat"]');
+                const kdvSelect = row.querySelector('select[name$="-kdv_oran"]');
+
+                const miktar = miktarInput ? parseFloat(miktarInput.value) : 0;
+                const fiyat = fiyatInput ? parseFloat(fiyatInput.value) : 0;
+                const kdvOran = kdvSelect ? parseFloat(kdvSelect.value) : 0;
+
+                // Satır hesapla
+                if (!isNaN(miktar) && !isNaN(fiyat)) {
+                    const satirTutar = miktar * fiyat;
+                    const satirKDV = satirTutar * (kdvOran / 100);
+                    
+                    // Satır toplamını input'a yaz
+                    const satirToplamInput = row.querySelector('.satir-toplam');
+                    if (satirToplamInput) {
+                        satirToplamInput.value = (satirTutar + satirKDV).toFixed(2);
+                    }
+
+                    toplamTutar += satirTutar;
+                    toplamKDV += satirKDV;
+                }
+            });
+
+            // Alt toplamları güncelle
+            const elAraToplam = document.getElementById('genelAraToplam');
+            const elKDV = document.getElementById('genelKDV');
+            const elGenelToplam = document.getElementById('genelToplam');
+
+            if (elAraToplam) elAraToplam.innerText = toplamTutar.toFixed(2) + ' ₺';
+            if (elKDV) elKDV.innerText = toplamKDV.toFixed(2) + ' ₺';
+            if (elGenelToplam) elGenelToplam.innerText = (toplamTutar + toplamKDV).toFixed(2) + ' ₺';
+        }
+
+        // 3. EVENT LISTENER'LARI BAĞLA
+        // Her satırdaki inputlara 'input' ve 'change' olaylarını ekle
+        satirlar.forEach(row => {
+            const inputs = row.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                input.addEventListener('input', hesapla);
+                input.addEventListener('change', hesapla);
+            });
+
+            // Silme Butonu Mantığı
+            const silBtn = row.querySelector('.sil-btn');
+            const silCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+            
+            if(silBtn && silCheckbox) {
+                silBtn.addEventListener('click', function() {
+                    silCheckbox.checked = !silCheckbox.checked; // Checkbox durumunu tersine çevir
+                    hesapla(); // Tekrar hesapla (görünümü güncelle)
+                });
+            }
+        });
+
+        // Sayfa ilk açıldığında bir kez hesapla
+        hesapla();
     });
 </script>
+
+<style>
+    .table input.form-control, .table select.form-select {
+        font-size: 0.9rem;
+        padding: 0.4rem 0.5rem;
+    }
+    .sil-btn {
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    /* Sadece okuma amaçlı toplam inputu */
+    .satir-toplam {
+        background-color: #f8f9fa;
+        border: none;
+        box-shadow: none;
+    }
+</style>
 {% endblock %}
