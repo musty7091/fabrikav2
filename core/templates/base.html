@@ -10,18 +10,40 @@
 
     <style>
         :root{
-            /* Toast'ların başlayacağı güvenli üst boşluk (JS bunu header'a göre güncelleyecek) */
+            /* Toast'ların başlayacağı güvenli üst boşluk (header'a göre JS günceller) */
             --toast-safe-top: 12px;
+            /* Toast varken içeriği aşağı itmek için (toast yüksekliği kadar) */
+            --toast-stack-height: 0px;
         }
 
-        body { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
+        body{
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', sans-serif;
+            padding-top: var(--toast-stack-height);
+            transition: padding-top .18s ease;
+        }
 
-        /* Toast container artık top-0 değil, dinamik bir offset ile başlıyor */
+        /* ✅ Toast container: en üst ORTA */
         .toast-container{
             z-index: 1055;
+            position: fixed;
             top: var(--toast-safe-top) !important;
-            right: 12px !important;
+
+            left: 50% !important;
+            right: auto !important;
+            transform: translateX(-50%);
+            width: min(720px, calc(100vw - 24px));
         }
+
+        /* ✅ Toast: tek satır + ... */
+        .toast .toast-body{
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Toast genişliği container kadar */
+        .toast{ width: 100%; }
 
         /* Tablo ve Kart Ortak Stilleri */
         .table-card { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
@@ -67,7 +89,7 @@
         .fab-stok{ background: #0d6efd; color: #fff; }     /* Bootstrap primary */
         .fab-cari{ background: #ffffff; color: #0d6efd; border: 2px solid #0d6efd; }
 
-        /* Serbest Fatura butonu: beyaz zemin + yeşil çerçeve (temiz ve muhasebe işi gibi 😄) */
+        /* Serbest Fatura butonu */
         .fab-serbest{ background: #ffffff; color: #198754; border: 2px solid #198754; }
         .fab-serbest:hover{ filter: none; }
 
@@ -75,7 +97,7 @@
         @media (max-width: 576px){
             .fab-wrap{ right: 16px; bottom: 16px; }
             .fab{ width: 50px; height: 50px; font-size: 18px; }
-            .toast-container{ right: 10px !important; }
+            .toast-container{ width: calc(100vw - 20px); }
         }
     </style>
 
@@ -100,7 +122,7 @@
             <i class="fa-solid fa-address-book"></i>
         </a>
 
-        <!-- Serbest Fatura Girişi (FAB olarak) -->
+        <!-- Serbest Fatura Girişi -->
         <a href="{% url 'serbest_fatura_girisi' %}" class="fab fab-serbest"
            data-bs-toggle="tooltip" data-bs-placement="left"
            title="Serbest Fatura Girişi" aria-label="Serbest Fatura Girişi">
@@ -116,10 +138,9 @@
 
     </div>
 
-    {% block content %}{% endblock %}
-
     {% if messages %}
-    <div class="toast-container position-fixed end-0 p-3" aria-live="polite" aria-atomic="true">
+    <!-- ✅ end-0 yok: artık ortada -->
+    <div class="toast-container p-3" aria-live="polite" aria-atomic="true">
         {% for message in messages %}
         <div class="toast align-items-center text-white bg-{% if message.tags == 'error' %}danger{% elif message.tags == 'debug' %}secondary{% else %}{{ message.tags }}{% endif %} border-0 shadow-lg"
              role="alert" aria-live="assertive" aria-atomic="true">
@@ -131,12 +152,14 @@
                     {% else %}<i class="fas fa-info-circle me-2"></i>{% endif %}
                     {{ message }}
                 </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Kapat"></buttonflex>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Kapat"></button>
             </div>
         </div>
         {% endfor %}
     </div>
     {% endif %}
+
+    {% block content %}{% endblock %}
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -156,24 +179,50 @@
                 return new bootstrap.Tooltip(tooltipTriggerEl);
             });
 
-            // ✅ Toast'ların içeriği kapatmaması için güvenli üst boşluk hesapla
-            // Sayfada varsa ilk "navbar" veya "header" elementini baz alır.
+            // ✅ Header yüksekliğine göre toast'ın üst boşluğu
             function computeToastSafeTop(){
                 const toastPadding = 12;
                 const headerEl = document.querySelector('.navbar, header, .topbar, .app-header');
                 if(headerEl){
                     const rect = headerEl.getBoundingClientRect();
-                    // header'ın altına biraz nefes
                     const top = Math.max(8, Math.round(rect.height + toastPadding));
                     document.documentElement.style.setProperty('--toast-safe-top', top + 'px');
                 } else {
-                    // header yoksa yine de küçük bir boşluk bırak
                     document.documentElement.style.setProperty('--toast-safe-top', '12px');
                 }
             }
 
+            // ✅ Toast yüksekliğine göre body'yi aşağı it (ama abartmasın diye limitli)
+            function updateToastStackSpace(){
+                const container = document.querySelector('.toast-container');
+                if(!container){
+                    document.documentElement.style.setProperty('--toast-stack-height', '0px');
+                    return;
+                }
+
+                // Görünen toast'ların toplam yüksekliği (container padding dahil)
+                const rect = container.getBoundingClientRect();
+                const total = Math.ceil(rect.height);
+
+                const maxPush = 110; // içerik en fazla 110px aşağı insin
+                const limited = Math.min(total, maxPush);
+
+                document.documentElement.style.setProperty('--toast-stack-height', limited + 'px');
+            }
+
             computeToastSafeTop();
-            window.addEventListener('resize', computeToastSafeTop);
+            updateToastStackSpace();
+
+            window.addEventListener('resize', function(){
+                computeToastSafeTop();
+                updateToastStackSpace();
+            });
+
+            // Toast kapanınca/patlayınca boşluğu güncelle
+            document.querySelectorAll('.toast').forEach(function(t){
+                t.addEventListener('hidden.bs.toast', updateToastStackSpace);
+                t.addEventListener('shown.bs.toast', updateToastStackSpace);
+            });
 
         });
     </script>
