@@ -483,9 +483,11 @@ def odeme_yap(request):
 def avans_mahsup(request, tedarikci_id):
     """
     AVANS MAHSUP EKRANI
-    - Avans (allocation'sız) ödemeleri listeler
-    - Açık faturalar listeler
-    - Seçilen avansı seçilen faturalarla FIFO mantığıyla dağıtır (OdemeDagitim varsa)
+    - SOL: Avans ödemeler (kalan avans = odeme.tutar - dagitilan)
+        * Eğer ödeme fatura'ya bağlıysa ve dagitim yoksa -> avans saymayız (sende not: "Fatura bağlı değilse avans sayılır")
+        * Eğer ödeme kısmi dağıtıldıysa kalan kısmı avanstır ve listede görünür
+    - SAĞ: Açık faturalar (kalan_tl > 0)
+    - POST: seçilen odeme_id ile seçilen fatura_id listesine dağıtım yapar (mevcut mantığını korur)
     """
     if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
@@ -497,50 +499,85 @@ def avans_mahsup(request, tedarikci_id):
     tedarikci = get_object_or_404(Tedarikci, id=tedarikci_id)
     guncel_kurlar = tcmb_kur_getir()
 
-    allocated_ids = _odeme_allocated_ids()
+    # -----------------------------------------------------
+    # 1) SOL: AVANSLAR (kalan avans hesapla)
+    # -----------------------------------------------------
+    avanslar = []
+    odemeler_qs = Odeme.objects.filter(tedarikci=tedarikci).order_by("tarih", "id")
 
-    # Avans = bu tedarikçide olup allocation'ı olmayan ödemeler
-    avanslar = Odeme.objects.filter(tedarikci=tedarikci)
-    if allocated_ids:
-        avanslar = avanslar.exclude(id__in=allocated_ids)
-    # İstersen fatura bağlı olanları da hariç tutabilirsin; ben dahil bıraktım (bazı kullanıcılar yanlışlıkla bağlayabiliyor)
-    avanslar = avanslar.order_by('tarih', 'id')
+    for o in odemeler_qs:
+        # Bu ödemenin toplam dağıtılan kısmı (TL)
+        dagitilan = (
+            OdemeDagitim.objects.filter(odeme=o).aggregate(s=Sum("tutar"))["s"]
+            or Decimal("0.00")
+        )
+        dagitilan = to_decimal(dagitilan)
 
-    # Açık faturalar
+        # Not: "Fatura bağlı değilse avans sayılır" demişsin.
+        # Eğer ödeme bir faturaya bağlı ama hiç dağıtım yoksa, bunu avans listesine alma.
+        if o.fatura_id and dagitilan <= Decimal("0.00"):
+            continue
+
+        kalan = to_decimal(o.tutar) - dagitilan
+
+        # Sadece kalan varsa listede göster
+        if kalan > Decimal("0.01"):
+            # Template'in kullandığı alanlar:
+            # a.tutar_tl (gösterim), data-tutar için
+            o.tutar_tl = kalan
+            avanslar.append(o)
+
+    # -----------------------------------------------------
+    # 2) SAĞ: AÇIK FATURALAR
+    # -----------------------------------------------------
     faturalar = []
-    for fat in Fatura.objects.filter(tedarikci=tedarikci).order_by('tarih', 'id'):
+    for fat in Fatura.objects.filter(tedarikci=tedarikci).order_by("tarih", "id"):
         kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
         if kalan_tl > Decimal("0.01"):
-            pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-            toplam_tl = _invoice_total_tl(fat, guncel_kurlar)
             faturalar.append({
                 "id": fat.id,
                 "no": fat.fatura_no,
                 "tarih": fat.tarih,
-                "pb": pb,
-                "kur": kur,
-                "toplam_tl": toplam_tl,
-                "kalan_tl": kalan_tl,
-                "aciklama": fat.aciklama or ""
+                "aciklama": fat.aciklama or "",
+                "kalan_tl": to_decimal(kalan_tl),
             })
 
+    # -----------------------------------------------------
+    # 3) POST: Mahsup
+    # -----------------------------------------------------
     if request.method == "POST":
         try:
             with transaction.atomic():
-                odeme_id = int(request.POST.get("odeme_id"))
+                odeme_id_raw = request.POST.get("odeme_id")
+                if not odeme_id_raw:
+                    messages.error(request, "Mahsup hatası: Avans (ödeme) seçilmedi.")
+                    return redirect("avans_mahsup", tedarikci_id=tedarikci.id)
+
+                odeme_id = int(odeme_id_raw)
+
+                # Template name="fatura_id"
                 sec_fatura_ids = request.POST.getlist("fatura_id")
 
                 odeme = get_object_or_404(Odeme, id=odeme_id, tedarikci=tedarikci)
 
-                # Güvenlik: bu ödeme daha önce dağıtılmış mı?
-                if OdemeDagitim.objects.filter(odeme=odeme).exists():
-                    messages.error(request, "Bu ödeme daha önce mahsuplaştırılmış. Yeniden mahsup edilemez.")
+                # Bu ödeme daha önce tamamen mahsuplaştırılmış mı?
+                # (Kısmi dağıtım varsa kalan hala avans; yeniden mahsup edilebilir.
+                #  Burada "exists()" yerine kalan hesaplayalım.)
+                dagitilan = (
+                    OdemeDagitim.objects.filter(odeme=odeme).aggregate(s=Sum("tutar"))["s"]
+                    or Decimal("0.00")
+                )
+                kalan_avans = to_decimal(odeme.tutar) - to_decimal(dagitilan)
+
+                if kalan_avans <= Decimal("0.01"):
+                    messages.error(request, "Bu ödeme için kullanılabilir avans kalmamış (tamamı mahsuplaştırılmış).")
                     return redirect("avans_mahsup", tedarikci_id=tedarikci.id)
 
-                kalan_avans = to_decimal(odeme.tutar)
-
                 # FIFO: seçilen faturaları tarih sırasıyla ele al
-                sec_faturalar = Fatura.objects.filter(id__in=sec_fatura_ids, tedarikci=tedarikci).order_by("tarih", "id")
+                sec_faturalar = Fatura.objects.filter(
+                    id__in=sec_fatura_ids,
+                    tedarikci=tedarikci
+                ).order_by("tarih", "id")
 
                 for fat in sec_faturalar:
                     if kalan_avans <= Decimal("0.01"):

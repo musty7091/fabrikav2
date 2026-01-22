@@ -67,17 +67,18 @@
                 {% for a in avanslar %}
                 <tr style="cursor:pointer" onclick="toggleAvans('{{ a.id }}')">
                   <td class="text-center" onclick="event.stopPropagation()">
-                    <!-- ✅ VIEW İLE UYUMLU: name="odeme_id" -->
                     <input class="form-check-input avans-cb"
                            type="radio"
-                           name="odeme_id"
+                           name="odeme_id_radio"
                            id="avans_{{ a.id }}"
                            value="{{ a.id }}"
                            data-tutar="{{ a.tutar_tl|unlocalize }}">
                   </td>
                   <td><small>{{ a.tarih|date:"d.m.Y" }}</small></td>
                   <td>
-                    <div class="fw-bold">{{ a.odeme_turu }}</div>
+                    <div class="fw-bold">
+                      {% if a.get_odeme_turu_display %}{{ a.get_odeme_turu_display }}{% else %}{{ a.odeme_turu }}{% endif %}
+                    </div>
                     <div class="small text-muted">{{ a.aciklama }}</div>
                   </td>
                   <td class="text-end fw-bold text-success">
@@ -141,6 +142,9 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="manual">
 
+          <!-- ✅ KRİTİK: odeme_id bu form içinde olmalı ki POST'ta gelsin -->
+          <input type="hidden" name="odeme_id" id="manual_odeme_id">
+
           <div class="card-body p-0">
             <div class="table-responsive">
               <table class="table table-striped table-hover mb-0 align-middle">
@@ -159,7 +163,6 @@
                   {% for f in faturalar %}
                   <tr>
                     <td class="text-center">
-                      <!-- ✅ VIEW İLE UYUMLU: name="fatura_id" -->
                       <input class="form-check-input fatura-cb"
                              type="checkbox"
                              name="fatura_id"
@@ -257,9 +260,13 @@
     const av = getSelectedAvans();
     document.getElementById('secili-avans-tutar').innerText = formatTR(av.tutar);
 
-    // FIFO formuna da set edelim
+    // ✅ FIFO formuna set
     const fifo = document.getElementById('fifo_odeme_id');
     if(fifo) fifo.value = av.id || "";
+
+    // ✅ Manuel formun hidden odeme_id'sine set (KRİTİK)
+    const man = document.getElementById('manual_odeme_id');
+    if(man) man.value = av.id || "";
 
     let toplam = 0;
     document.querySelectorAll('.dagitim-input').forEach(inp=>{
@@ -313,6 +320,10 @@
       alert("Toplam mahsup, seçilen avans tutarını geçemez.");
       return false;
     }
+
+    // odeme_id hidden zaten refreshSummary ile set ediliyor ama garanti:
+    const man = document.getElementById('manual_odeme_id');
+    if(man) man.value = av.id;
 
     return true;
   }
