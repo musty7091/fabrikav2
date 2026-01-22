@@ -18,7 +18,7 @@ def depo_dashboard(request):
         return redirect('erisim_engellendi')
     
     # Uzman Formülü: Giriş - Çıkış - İade (Dashboard için Coalesce ile koruma sağlandı)
-    malzemeler = Malzeme.objects.annotate(
+    malzemeler = base_qs.annotate(
         giren=Coalesce(Sum('hareketler__miktar', filter=Q(hareketler__islem_turu='giris')), Value(0, output_field=DecimalField())),
         cikan=Coalesce(Sum('hareketler__miktar', filter=Q(hareketler__islem_turu='cikis')), Value(0, output_field=DecimalField())),
         iadeler=Coalesce(Sum('hareketler__miktar', filter=Q(hareketler__islem_turu='iade')), Value(0, output_field=DecimalField())),
@@ -49,10 +49,21 @@ def stok_listesi(request):
         return redirect('erisim_engellendi')
     
     search = request.GET.get('search', '')
-    
+
+    # Tanım filtre (aktif/pasif/hepsi) - varsayılan: sadece aktif malzemeler
+    durum = (request.GET.get('durum') or 'aktif').lower().strip()
+    base_qs = Malzeme.objects.all()
+    if durum == 'pasif':
+        base_qs = base_qs.filter(is_active=False)
+    elif durum == 'hepsi':
+        pass
+    else:
+        durum = 'aktif'
+        base_qs = base_qs.filter(is_active=True)
+
     # KRİTİK DÜZELTME: 
     # hesaplanan_stok formülünde girişleri toplarken kullanım depolarını (is_kullanim_yeri=True) hariç tutuyoruz.
-    malzemeler = Malzeme.objects.annotate(
+    malzemeler = base_qs.annotate(
         hesaplanan_stok=Coalesce(
             Sum('hareketler__miktar', filter=Q(hareketler__islem_turu='giris', hareketler__depo__is_kullanim_yeri=False)), 
             Value(0, output_field=DecimalField())
@@ -94,7 +105,8 @@ def stok_listesi(request):
         'malzemeler': malzemeler, 
         'search_query': search, 
         'kritik_sayisi': kritik_sayisi,
-        'yok_sayisi': yok_sayisi
+        'yok_sayisi': yok_sayisi,
+        'durum': durum
     })
 
 @login_required

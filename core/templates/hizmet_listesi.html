@@ -1,46 +1,86 @@
 {% extends 'base.html' %}
-{% block title %}Hizmet Listesi | AECO{% endblock %}
-{% block extra_css %}<style>.container { max-width: 1200px; margin-top: 40px; }</style>{% endblock %}
+{% block title %}Hizmet / İş Kalemleri | AECO{% endblock %}
+{% block extra_css %}
+<style>
+  .container { max-width: 1100px; margin-top: 40px; }
+  .btn-action { width: 35px; height: 35px; padding: 0; line-height: 35px; border-radius: 50%; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm"><i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi</a>
-            <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark"><i class="fas fa-tools me-2 text-primary"></i>Hizmet / İş Kalemleri</h3>
-        </div>
-        <a href="{% url 'hizmet_ekle' %}" class="btn btn-primary rounded-pill px-4 shadow-sm fw-bold"><i class="fas fa-plus me-2"></i> Yeni Hizmet Tanımla</a>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm">
+        <i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi
+      </a>
+      <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark">Hizmet / İş Kalemleri</h3>
     </div>
-    <div class="table-card">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr><th style="width: 50px;">#</th><th>Hizmet Adı</th><th>Kategori</th><th>Birim</th><th>KDV</th><th>Tahmini Metraj</th><th class="text-end" style="width: 150px;"></th></tr>
-                </thead>
-                <tbody>
-                    {% for hiz in hizmetler %}
-                    <tr>
-                        <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-                        <td class="fw-bold text-primary">{{ hiz.isim }}</td>
-                        <td><span class="badge bg-light text-dark border">{{ hiz.kategori.isim|default:"Genel" }}</span></td>
-                        <td>{{ hiz.get_birim_display }}</td>
-                        <td>%{{ hiz.kdv_orani }}</td>
-                        <td>{{ hiz.hedef_miktar|floatformat:0 }}</td>
-                        <td class="text-end">
-                            <a href="{% url 'hizmet_duzenle' pk=hiz.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle">
-                                <i class="fas fa-edit"></i>
-                            </a>
-                            
-                            <a href="{% url 'hizmet_sil' pk=hiz.id %}" class="btn btn-outline-danger btn-action" title="Sil" onclick="return confirm('{{ hiz.isim }} hizmetini silmek istediğinize emin misiniz?');">
-                                <i class="fas fa-trash-alt"></i>
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="7" class="text-center py-5 text-muted"><i class="fas fa-tools fa-2x mb-3 text-secondary" style="opacity: 0.5;"></i><br>Henüz tanımlı bir hizmet veya iş kalemi yok.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+    <a href="{% url 'hizmet_ekle' %}" class="btn btn-primary rounded-pill px-4 shadow-sm">
+      <i class="fas fa-plus me-2"></i> Yeni Hizmet
+    </a>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="btn-group" role="group" aria-label="Durum filtre">
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'aktif' %}active{% endif %}" href="{% url 'hizmet_listesi' %}?durum=aktif">Aktif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'pasif' %}active{% endif %}" href="{% url 'hizmet_listesi' %}?durum=pasif">Pasif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'hepsi' %}active{% endif %}" href="{% url 'hizmet_listesi' %}?durum=hepsi">Hepsi</a>
     </div>
+    <small class="text-muted">Hizmetler pasife alınır.</small>
+  </div>
+
+  <div class="table-card">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width: 50px;">#</th>
+          <th>Kategori</th>
+          <th>Hizmet / İş Kalemi</th>
+          <th>Birim</th>
+          <th style="width: 110px;">Durum</th>
+          <th class="text-end" style="width: 170px;">İşlemler</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for h in hizmetler %}
+        <tr class="{% if not h.is_active %}table-secondary{% endif %}">
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td><span class="badge bg-light text-dark border">{{ h.kategori.isim }}</span></td>
+          <td class="fw-bold">{{ h.isim }}</td>
+          <td>{{ h.get_birim_display }}</td>
+          <td>
+            {% if h.is_active %}
+              <span class="badge bg-success">Aktif</span>
+            {% else %}
+              <span class="badge bg-secondary">Pasif</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'hizmet_duzenle' pk=h.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle">
+              <i class="fas fa-edit"></i>
+            </a>
+
+            <form method="post" action="{% url 'tanim_toggle_active' model='hizmet' pk=h.id %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit"
+                      class="btn {% if h.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-action"
+                      title="{% if h.is_active %}Pasif Et{% else %}Aktif Et{% endif %}"
+                      onclick="return confirm('{% if h.is_active %}Bu kaydı PASİF etmek istediğinize emin misiniz?{% else %}Bu kaydı tekrar AKTİF etmek istiyor musunuz?{% endif %}');">
+                <i class="fas {% if h.is_active %}fa-ban{% else %}fa-check{% endif %}"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center py-4 text-muted">
+            <i class="fas fa-info-circle me-2"></i>Kayıtlı hizmet yok.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

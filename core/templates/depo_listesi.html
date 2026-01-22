@@ -1,49 +1,86 @@
 {% extends 'base.html' %}
-{% block title %}Depo Listesi | AECO{% endblock %}
-{% block extra_css %}<style>.container { max-width: 900px; margin-top: 50px; }</style>{% endblock %}
+{% block title %}Depo Tanımları | AECO{% endblock %}
+{% block extra_css %}
+<style>
+  .container { max-width: 1100px; margin-top: 40px; }
+  .btn-action { width: 35px; height: 35px; padding: 0; line-height: 35px; border-radius: 50%; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm"><i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi</a>
-            <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark">Depo Listesi</h3>
-        </div>
-        <a href="{% url 'depo_ekle' %}" class="btn btn-dark rounded-pill px-4 shadow-sm"><i class="fas fa-plus me-2"></i> Yeni Depo</a>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm">
+        <i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi
+      </a>
+      <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark">Depo Tanımları</h3>
     </div>
-    <div class="table-card">
-        <table class="table table-hover align-middle">
-            <thead class="table-light">
-                <tr>
-                    <th scope="col" style="width: 50px;">#</th>
-                    <th scope="col">Depo Adı</th>
-                    <th scope="col">Tür</th>
-                    <th scope="col" class="text-end" style="width: 200px;">İşlemler</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for depo in depolar %}
-                <tr>
-                    <td class="fw-bold text-muted">{{ forloop.counter }}</td>
-                    <td class="fw-bold">{{ depo.isim }}</td>
-                    <td>
-                        {% if depo.is_sanal %}
-                            <span class="badge bg-warning text-dark"><i class="fas fa-cloud me-1"></i> Sanal</span>
-                        {% elif depo.is_kullanim_yeri %}
-                            <span class="badge bg-info text-white"><i class="fas fa-tools me-1"></i> Kullanım / Sarf</span>
-                        {% else %}
-                            <span class="badge bg-success"><i class="fas fa-warehouse me-1"></i> Fiziksel</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-end">
-                        <a href="{% url 'depo_duzenle' pk=depo.id %}" class="btn btn-sm btn-outline-primary me-1" title="Düzenle"><i class="fas fa-edit"></i></a>
-                        <a href="{% url 'depo_sil' pk=depo.id %}" class="btn btn-sm btn-outline-danger" title="Sil" onclick="return confirm('Silmek istediğinize emin misiniz?');"><i class="fas fa-trash-alt"></i></a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="4" class="text-center py-4 text-muted"><i class="fas fa-info-circle me-2"></i> Henüz tanımlı bir depo yok.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <a href="{% url 'depo_ekle' %}" class="btn btn-primary rounded-pill px-4 shadow-sm">
+      <i class="fas fa-plus me-2"></i> Yeni Depo Ekle
+    </a>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="btn-group" role="group" aria-label="Durum filtre">
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'aktif' %}active{% endif %}" href="{% url 'depo_listesi' %}?durum=aktif">Aktif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'pasif' %}active{% endif %}" href="{% url 'depo_listesi' %}?durum=pasif">Pasif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'hepsi' %}active{% endif %}" href="{% url 'depo_listesi' %}?durum=hepsi">Hepsi</a>
     </div>
+    <small class="text-muted">Depoyu silmek yerine pasife alıyoruz.</small>
+  </div>
+
+  <div class="table-card">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width: 50px;">#</th>
+          <th>Depo Adı</th>
+          <th>Tip</th>
+          <th>Adres</th>
+          <th style="width: 110px;">Durum</th>
+          <th class="text-end" style="width: 170px;">İşlemler</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in depolar %}
+        <tr class="{% if not d.is_active %}table-secondary{% endif %}">
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td class="fw-bold">{{ d.isim }}</td>
+          <td><span class="badge bg-light text-dark border">{{ d.get_depo_tipi_display }}</span></td>
+          <td>{{ d.adres|default:"-" }}</td>
+          <td>
+            {% if d.is_active %}
+              <span class="badge bg-success">Aktif</span>
+            {% else %}
+              <span class="badge bg-secondary">Pasif</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'depo_duzenle' pk=d.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle">
+              <i class="fas fa-edit"></i>
+            </a>
+
+            <form method="post" action="{% url 'tanim_toggle_active' model='depo' pk=d.id %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit"
+                      class="btn {% if d.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-action"
+                      title="{% if d.is_active %}Pasif Et{% else %}Aktif Et{% endif %}"
+                      onclick="return confirm('{% if d.is_active %}Bu depoyu PASİF etmek istediğinize emin misiniz?{% else %}Bu depoyu tekrar AKTİF etmek istiyor musunuz?{% endif %}');">
+                <i class="fas {% if d.is_active %}fa-ban{% else %}fa-check{% endif %}"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center py-4 text-muted">
+            <i class="fas fa-info-circle me-2"></i>Kayıtlı depo yok.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

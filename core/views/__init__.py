@@ -18,6 +18,7 @@ from .talep_teklif import (
 )
 
 from .tanimlar import (
+    tanim_toggle_active,
     tanim_yonetimi,
     kategori_ekle, kategori_listesi, kategori_duzenle, kategori_sil,
     depo_ekle, depo_listesi, depo_duzenle, depo_sil,

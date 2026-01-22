@@ -7,20 +7,22 @@
     .bg-gradient-primary { background: linear-gradient(45deg, #4e73df, #224abe); color: white; }
     .bg-gradient-danger { background: linear-gradient(45deg, #e74a3b, #be2617); color: white; }
     .bg-gradient-secondary { background: linear-gradient(45deg, #858796, #60616f); color: white; }
-    
+
     /* Durum satır çizgileri */
     tr.stok-yok { border-left: 5px solid #858796; background-color: #f8f9fc; }
     tr.stok-kritik { border-left: 5px solid #e74a3b; background-color: #fff3f3 !important; }
     tr.stok-yeterli { border-left: 5px solid #1cc88a; }
-    
+
+    tr.pasif-kayit { opacity: 0.75; }
+
     .btn-action { width: 35px; height: 35px; padding: 0; line-height: 35px; border-radius: 50%; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container py-4" style="max-width: 1200px;">
-    
-    <div class="d-flex justify-content-between align-items-center mb-4">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div class="d-flex align-items-center">
             <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-3 shadow-sm">
                 <i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi
@@ -28,9 +30,27 @@
             <h1 class="h3 mb-0 text-gray-800 fw-bold"><i class="fas fa-boxes me-2 text-primary"></i>STOK KARTLARI</h1>
         </div>
         <div>
-            
-            <a href="{% url 'malzeme_ekle' %}" class="btn btn-primary shadow-sm fw-bold rounded-pill px-4"><i class="fas fa-plus me-2"></i> Yeni Stok Kartı</a>
+            <a href="{% url 'malzeme_ekle' %}" class="btn btn-primary shadow-sm fw-bold rounded-pill px-4">
+                <i class="fas fa-plus me-2"></i> Yeni Stok Kartı
+            </a>
         </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="btn-group" role="group" aria-label="Durum filtre">
+            <a class="btn btn-outline-secondary rounded-pill {% if durum == 'aktif' %}active{% endif %}" href="{% url 'stok_listesi' %}?durum=aktif">Aktif</a>
+            <a class="btn btn-outline-secondary rounded-pill {% if durum == 'pasif' %}active{% endif %}" href="{% url 'stok_listesi' %}?durum=pasif">Pasif</a>
+            <a class="btn btn-outline-secondary rounded-pill {% if durum == 'hepsi' %}active{% endif %}" href="{% url 'stok_listesi' %}?durum=hepsi">Hepsi</a>
+        </div>
+
+        <form class="d-flex" method="GET">
+            <input type="hidden" name="durum" value="{{ durum }}">
+            <input class="form-control rounded-pill me-2" type="search" name="search" placeholder="Malzeme Ara..." value="{{ search_query }}">
+            <button class="btn btn-outline-primary rounded-pill" type="submit"><i class="fas fa-search"></i></button>
+            {% if search_query %}
+                <a href="{% url 'stok_listesi' %}?durum={{ durum }}" class="btn btn-outline-secondary rounded-pill ms-2">X</a>
+            {% endif %}
+        </form>
     </div>
 
     <div class="row mb-4">
@@ -39,7 +59,7 @@
                 <div class="card-body">
                     <div class="row no-gutters align-items-center">
                         <div class="col mr-2">
-                            <div class="text-xs fw-bold text-uppercase mb-1" style="opacity: 0.8;">Toplam Malzeme Çeşidi</div>
+                            <div class="text-xs fw-bold text-uppercase mb-1" style="opacity: 0.8;">Gösterilen Malzeme</div>
                             <div class="h3 mb-0 fw-bold">{{ malzemeler.count }}</div>
                         </div>
                         <div class="col-auto"><i class="fas fa-layer-group fa-2x text-white-50"></i></div>
@@ -78,11 +98,7 @@
     <div class="card shadow-sm">
         <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
             <h6 class="m-0 fw-bold text-primary">Envanter Listesi</h6>
-            <form class="d-flex" method="GET">
-                <input class="form-control rounded-pill me-2" type="search" name="search" placeholder="Malzeme Ara..." value="{{ search_query }}">
-                <button class="btn btn-outline-primary rounded-pill" type="submit"><i class="fas fa-search"></i></button>
-                {% if search_query %}<a href="{% url 'stok_listesi' %}" class="btn btn-outline-secondary rounded-pill ms-2">X</a>{% endif %}
-            </form>
+            <small class="text-muted">Silme yok: stok kartı pasife alınır.</small>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -94,13 +110,14 @@
                             <th>Kategori</th>
                             <th class="text-center">Mevcut Stok</th>
                             <th>Birim</th>
+                            <th>Stok Durumu</th>
                             <th>Durum</th>
                             <th class="text-end" style="padding-right: 20px;">İşlemler</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for mal in malzemeler %}
-                        <tr class="{% if mal.stok_durumu == 'YOK' %}stok-yok{% elif mal.stok_durumu == 'KRİTİK' %}stok-kritik{% else %}stok-yeterli{% endif %}">
+                        <tr class="{% if not mal.is_active %}pasif-kayit table-secondary{% endif %} {% if mal.stok_durumu == 'YOK' %}stok-yok{% elif mal.stok_durumu == 'KRİTİK' %}stok-kritik{% else %}stok-yeterli{% endif %}">
                             <td class="px-3">
                                 <a href="{% url 'stok_hareketleri' mal.id %}" class="text-decoration-none fw-bold text-dark hover-primary">
                                     {{ mal.isim }}
@@ -123,19 +140,33 @@
                                     {{ mal.stok_durumu }}
                                 </span>
                             </td>
+                            <td>
+                                {% if mal.is_active %}
+                                  <span class="badge bg-success">Aktif</span>
+                                {% else %}
+                                  <span class="badge bg-secondary">Pasif</span>
+                                {% endif %}
+                            </td>
                             <td class="text-end px-3">
                                 <a href="{% url 'malzeme_duzenle' pk=mal.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle">
                                     <i class="fas fa-edit"></i>
                                 </a>
-                                <a href="{% url 'malzeme_sil' pk=mal.id %}" class="btn btn-outline-danger btn-action" title="Sil" onclick="return confirm('Bu stok kartını silmek istediğinize emin misiniz?');">
-                                    <i class="fas fa-trash-alt"></i>
-                                </a>
+
+                                <form method="post" action="{% url 'tanim_toggle_active' model='malzeme' pk=mal.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            class="btn {% if mal.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-action"
+                                            title="{% if mal.is_active %}Pasif Et{% else %}Aktif Et{% endif %}"
+                                            onclick="return confirm('{% if mal.is_active %}Bu stok kartını PASİF etmek istediğinize emin misiniz?{% else %}Bu stok kartını tekrar AKTİF etmek istiyor musunuz?{% endif %}');">
+                                        <i class="fas {% if mal.is_active %}fa-ban{% else %}fa-check{% endif %}"></i>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="7" class="text-center py-5 text-muted">
-                                <i class="fas fa-box-open fa-3x mb-3"></i><br>Kayıtlı malzeme bulunamadı.
+                            <td colspan="8" class="text-center py-5 text-muted">
+                                <i class="fas fa-info-circle me-2"></i>Gösterilecek stok kartı yok.
                             </td>
                         </tr>
                         {% endfor %}
@@ -144,5 +175,6 @@
             </div>
         </div>
     </div>
+
 </div>
 {% endblock %}

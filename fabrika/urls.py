@@ -103,7 +103,7 @@ urlpatterns = [
     path('kategoriler/', views.kategori_listesi, name='kategori_listesi'),
     path('kategori/duzenle/<int:pk>/', views.kategori_duzenle, name='kategori_duzenle'),
     path('kategori/sil/<int:pk>/', views.kategori_sil, name='kategori_sil'),
-
+    path('tanim/toggle/<str:model>/<int:pk>/', views.tanim_toggle_active, name='tanim_toggle_active'),
     path('depolar/', views.depo_listesi, name='depo_listesi'),
     path('depo/duzenle/<int:pk>/', views.depo_duzenle, name='depo_duzenle'),
     path('depo/sil/<int:pk>/', views.depo_sil, name='depo_sil'),

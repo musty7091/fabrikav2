@@ -22,7 +22,9 @@ class IsKalemiInline(admin.TabularInline):
 @admin.register(Kategori)
 class KategoriAdmin(admin.ModelAdmin):
     inlines = [IsKalemiInline]
-    list_display = ('isim',)
+    list_display = ('isim', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('isim',)
 
 @admin.register(IsKalemi)
 class IsKalemiAdmin(admin.ModelAdmin):
@@ -32,7 +34,9 @@ class IsKalemiAdmin(admin.ModelAdmin):
 
 @admin.register(Tedarikci)
 class TedarikciAdmin(admin.ModelAdmin):
-    list_display = ('firma_unvani', 'yetkili_kisi', 'telefon')
+    list_display = ('firma_unvani', 'yetkili_kisi', 'telefon', 'is_active')
+    list_filter = ('is_active',)
+    search_fields = ('firma_unvani', 'yetkili_kisi', 'telefon')
     search_fields = ('firma_unvani',)
 
 # --- DEPO VE MALZEME YÖNETİMİ ---

@@ -33,13 +33,13 @@ PARA_BIRIMI_CHOICES = [
 
 class Kategori(models.Model):
     isim = models.CharField(max_length=100, verbose_name="Kategori Adı")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name='Aktif mi?')
 
     def __str__(self):
         return self.isim if self.isim else "Tanımsız Kategori"
 
     class Meta:
         verbose_name_plural = "1. İmalat Türleri"
-
 
 class IsKalemi(models.Model):
     BIRIMLER = [
@@ -55,6 +55,7 @@ class IsKalemi(models.Model):
 
     kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="Varsayılan KDV (%)")
     aciklama = models.TextField(blank=True, verbose_name="İş Tanımı / Teknik Şartname")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name='Aktif mi?')
 
     def __str__(self):
         return f"{self.isim} ({self.hedef_miktar} {self.get_birim_display()})"
@@ -65,12 +66,12 @@ class IsKalemi(models.Model):
 # ==========================================
 # 2. TEDARİKÇİLER
 # ==========================================
-
 class Tedarikci(models.Model):
     firma_unvani = models.CharField(max_length=200, verbose_name="Firma Ünvanı")
     yetkili_kisi = models.CharField(max_length=100, blank=True, verbose_name="Yetkili Kişi")
     telefon = models.CharField(max_length=20, blank=True)
     adres = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name='Aktif mi?')
 
     def __str__(self):
         return self.firma_unvani if self.firma_unvani else "Tanımsız Firma"
@@ -81,7 +82,6 @@ class Tedarikci(models.Model):
 # ==========================================
 # 3. DEPO VE STOK YÖNETİMİ
 # ==========================================
-
 class Depo(models.Model):
     DEPO_TIPLERI = [
         ("WAREHOUSE", "Fiziksel Depo"),
@@ -92,6 +92,7 @@ class Depo(models.Model):
 
     isim = models.CharField(max_length=100, verbose_name="Depo Adı")
     adres = models.CharField(max_length=200, blank=True, verbose_name="Lokasyon / Adres")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name='Aktif mi?')
 
     depo_tipi = models.CharField(
         max_length=20,
@@ -131,7 +132,6 @@ class Depo(models.Model):
     class Meta:
         verbose_name_plural = "Depo Tanımları"
 
-
 class Malzeme(models.Model):
     KATEGORILER = [
         ('genel', 'Genel Malzeme'),
@@ -150,6 +150,7 @@ class Malzeme(models.Model):
     kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="Varsayılan KDV (%)")
     kritik_stok = models.DecimalField(max_digits=10, decimal_places=2, default=10, verbose_name="Kritik Stok Uyarı Limiti")
     aciklama = models.TextField(blank=True, verbose_name="Teknik Özellikler / Notlar")
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name='Aktif mi?')
 
     @property
     def stok(self):
@@ -189,7 +190,6 @@ class Malzeme(models.Model):
 # ==========================================
 # 4. MALZEME TALEP FORMU
 # ==========================================
-
 class MalzemeTalep(models.Model):
     ONCELIKLER = [
         ('normal', '🟢 Normal'),

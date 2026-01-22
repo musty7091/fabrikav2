@@ -1,35 +1,86 @@
 {% extends 'base.html' %}
 {% block title %}Tedarikçi Listesi | AECO{% endblock %}
-{% block extra_css %}<style>.container { max-width: 1100px; margin-top: 40px; }</style>{% endblock %}
+{% block extra_css %}
+<style>
+  .container { max-width: 1100px; margin-top: 40px; }
+  .btn-action { width: 35px; height: 35px; padding: 0; line-height: 35px; border-radius: 50%; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-            <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm"><i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi</a>
-            <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark">Tedarikçi Portföyü</h3>
-        </div>
-        <a href="{% url 'tedarikci_ekle' %}" class="btn btn-primary rounded-pill px-4 shadow-sm"><i class="fas fa-plus me-2"></i> Yeni Firma Ekle</a>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <a href="{% url 'tanim_yonetimi' %}" class="btn btn-outline-secondary rounded-pill me-2 shadow-sm">
+        <i class="fas fa-arrow-left me-1"></i> Tanım Yönetimi
+      </a>
+      <h3 class="d-inline-block fw-bold align-middle mb-0 text-dark">Tedarikçi Portföyü</h3>
     </div>
-    <div class="table-card">
-        <table class="table table-hover align-middle">
-            <thead class="table-light"><tr><th style="width: 50px;">#</th><th>Firma Unvanı</th><th>Yetkili</th><th>Telefon</th><th class="text-end" style="width: 150px;">İşlemler</th></tr></thead>
-            <tbody>
-                {% for ted in tedarikciler %}
-                <tr>
-                    <td class="text-muted fw-bold">{{ forloop.counter }}</td>
-                    <td class="fw-bold">{{ ted.firma_unvani }}</td>
-                    <td>{{ ted.yetkili_kisi|default:"-" }}</td>
-                    <td>{{ ted.telefon|default:"-" }}</td>
-                    <td class="text-end">
-                        <a href="{% url 'tedarikci_duzenle' pk=ted.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle"><i class="fas fa-edit"></i></a>
-                        <a href="{% url 'tedarikci_sil' pk=ted.id %}" class="btn btn-outline-danger btn-action" title="Sil" onclick="return confirm('Silmek istediğinize emin misiniz?');"><i class="fas fa-trash-alt"></i></a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="5" class="text-center py-4 text-muted"><i class="fas fa-info-circle me-2"></i>Kayıtlı tedarikçi yok.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <a href="{% url 'tedarikci_ekle' %}" class="btn btn-primary rounded-pill px-4 shadow-sm">
+      <i class="fas fa-plus me-2"></i> Yeni Firma Ekle
+    </a>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="btn-group" role="group" aria-label="Durum filtre">
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'aktif' %}active{% endif %}" href="{% url 'tedarikci_listesi' %}?durum=aktif">Aktif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'pasif' %}active{% endif %}" href="{% url 'tedarikci_listesi' %}?durum=pasif">Pasif</a>
+      <a class="btn btn-outline-secondary rounded-pill {% if durum == 'hepsi' %}active{% endif %}" href="{% url 'tedarikci_listesi' %}?durum=hepsi">Hepsi</a>
     </div>
+    <small class="text-muted">Silme yok: kayıtlar pasife alınır. 🧯</small>
+  </div>
+
+  <div class="table-card">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr>
+          <th style="width: 50px;">#</th>
+          <th>Firma Unvanı</th>
+          <th>Yetkili</th>
+          <th>Telefon</th>
+          <th style="width: 110px;">Durum</th>
+          <th class="text-end" style="width: 170px;">İşlemler</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ted in tedarikciler %}
+        <tr class="{% if not ted.is_active %}table-secondary{% endif %}">
+          <td class="text-muted fw-bold">{{ forloop.counter }}</td>
+          <td class="fw-bold">{{ ted.firma_unvani }}</td>
+          <td>{{ ted.yetkili_kisi|default:"-" }}</td>
+          <td>{{ ted.telefon|default:"-" }}</td>
+          <td>
+            {% if ted.is_active %}
+              <span class="badge bg-success">Aktif</span>
+            {% else %}
+              <span class="badge bg-secondary">Pasif</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{% url 'tedarikci_duzenle' pk=ted.id %}" class="btn btn-outline-primary btn-action me-1" title="Düzenle">
+              <i class="fas fa-edit"></i>
+            </a>
+
+            <form method="post" action="{% url 'tanim_toggle_active' model='tedarikci' pk=ted.id %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit"
+                      class="btn {% if ted.is_active %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-action"
+                      title="{% if ted.is_active %}Pasif Et{% else %}Aktif Et{% endif %}"
+                      onclick="return confirm('{% if ted.is_active %}Bu tedarikçiyi PASİF etmek istediğinize emin misiniz?{% else %}Bu tedarikçiyi tekrar AKTİF etmek istiyor musunuz?{% endif %}');">
+                <i class="fas {% if ted.is_active %}fa-ban{% else %}fa-check{% endif %}"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="6" class="text-center py-4 text-muted">
+            <i class="fas fa-info-circle me-2"></i>Kayıtlı tedarikçi yok.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
