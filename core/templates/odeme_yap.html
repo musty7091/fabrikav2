@@ -10,9 +10,9 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h1 class="h3 mb-0 text-gray-800">
-                <i class="fas fa-money-check-alt text-success me-2"></i>ÖDEME ÇIKIŞI & BORÇ KAPAMA
+                <i class="fas fa-money-check-alt text-success me-2"></i>ÖDEME ÇIKIŞI (TL)
             </h1>
-            <p class="text-muted small mb-0">Tedarikçi seçerek açık faturaları ve hakedişleri görüntüleyip ödeme yapabilirsiniz.</p>
+            <p class="text-muted small mb-0">Tüm dövizli borçlar güncel kur üzerinden TL'ye çevrilerek gösterilmektedir.</p>
         </div>
         <a href="{% url 'finans_dashboard' %}" class="btn btn-secondary">
             <i class="fas fa-arrow-left me-1"></i> Vazgeç
@@ -35,10 +35,13 @@
                             {% endfor %}
                         </select>
                     </form>
+                    
                     {% if secilen_tedarikci %}
-                        <div class="mt-3 pt-3 border-top d-flex justify-content-between align-items-center">
-                            <span class="text-muted small">Toplam Açık Borç:</span>
-                            <span class="fw-bold fs-5 text-danger">{{ toplam_borc|floatformat:2 }} TL</span>
+                        <div class="mt-3 pt-3 border-top">
+                            <span class="text-muted small d-block mb-1">Toplam Güncel Borç (TL Karşılığı):</span>
+                            <h3 class="fw-bold text-danger">
+                                {{ toplam_borc_tl|floatformat:2|intcomma }} ₺
+                            </h3>
                         </div>
                     {% endif %}
                 </div>
@@ -46,11 +49,24 @@
 
             <div class="card shadow border-0">
                 <div class="card-header bg-success text-white">
-                    <h6 class="m-0 fw-bold"><i class="fas fa-wallet me-2"></i>Ödeme Bilgileri</h6>
+                    <h6 class="m-0 fw-bold"><i class="fas fa-wallet me-2"></i>Ödeme Bilgileri (TL)</h6>
                 </div>
                 <div class="card-body">
                     {% if secilen_tedarikci %}
                         
+                        {% if form.errors %}
+                            <div class="alert alert-danger">
+                                <strong>Hata oluştu:</strong>
+                                <ul class="mb-0 ps-3">
+                                    {% for field, errors in form.errors.items %}
+                                        {% for error in errors %}
+                                            <li>{{ field|title }}: {{ error }}</li>
+                                        {% endfor %}
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+
                         {% if messages %}
                             {% for message in messages %}
                                 <div class="alert alert-{{ message.tags }} p-2 small">{{ message }}</div>
@@ -60,6 +76,8 @@
                         <form method="post" id="mainPaymentForm">
                             {% csrf_token %}
                             <input type="hidden" name="tedarikci" value="{{ secilen_tedarikci.id }}">
+                            
+                            <input type="hidden" name="para_birimi" value="TRY">
                             
                             <div id="hidden-inputs"></div>
 
@@ -74,15 +92,13 @@
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label fw-bold small text-danger">Tutar ve Para Birimi</label>
+                                <label class="form-label fw-bold small text-danger">Ödenecek Tutar (TL)</label>
                                 <div class="input-group">
                                     {{ form.tutar }}
-                                    <div style="width: 90px;">
-                                        {{ form.para_birimi }}
-                                    </div>
+                                    <span class="input-group-text">TL</span>
                                 </div>
                                 <div class="form-text text-success small" id="dagitilacak-info">
-                                    Seçilenlerden hesaplanan: <b>0,00</b>
+                                    Seçilen: <b>0,00 TL</b>
                                 </div>
                             </div>
                             
@@ -111,11 +127,10 @@
                                 <i class="fas fa-save me-2"></i> Ödemeyi Kaydet
                             </button>
                         </form>
-
                     {% else %}
                         <div class="text-center text-muted py-4">
                             <i class="fas fa-arrow-up fa-2x mb-2 text-warning"></i>
-                            <p class="small mb-0">İşlem yapmak için yukarıdan<br>tedarikçi seçiniz.</p>
+                            <p class="small mb-0">İşlem yapmak için yukarıdan tedarikçi seçiniz.</p>
                         </div>
                     {% endif %}
                 </div>
@@ -140,8 +155,7 @@
                                         <th>Tarih</th>
                                         <th>Tür</th>
                                         <th>Açıklama / Belge No</th>
-                                        <th class="text-end">Tutar</th>
-                                        <th class="text-end pe-3">Kalan Bakiye</th>
+                                        <th class="text-end pe-3">Güncel Borç (TL)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -152,7 +166,7 @@
                                                    value="{{ kalem.tip }}_{{ kalem.id }}" 
                                                    id="cb_{{ kalem.tip }}_{{ kalem.id }}"
                                                    class="form-check-input kalem-checkbox"
-                                                   data-kalan="{{ kalem.kalan|unlocalize }}"
+                                                   data-kalan="{{ kalem.tutar|unlocalize }}"
                                                    onclick="event.stopPropagation(); hesapla();">
                                         </td>
                                         <td><small>{{ kalem.tarih|date:"d.m.Y" }}</small></td>
@@ -165,20 +179,16 @@
                                         </td>
                                         <td>
                                             <div class="fw-bold text-dark">{{ kalem.evrak_no }}</div>
-                                            <div class="small text-muted">{{ kalem.aciklama|truncatechars:40 }}</div>
-                                        </td>
-                                        <td class="text-end text-muted small">
-                                            {{ kalem.tutar|floatformat:2 }}
+                                            <div class="small text-muted">{{ kalem.aciklama|safe }}</div>
                                         </td>
                                         <td class="text-end pe-3 fw-bold text-danger">
-                                            {{ kalem.kalan|floatformat:2 }} {{ kalem.para_birimi }}
+                                            {{ kalem.tutar|floatformat:2|intcomma }} ₺
                                         </td>
                                     </tr>
                                     {% empty %}
                                     <tr>
-                                        <td colspan="6" class="text-center py-5 text-muted">
-                                            <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
-                                            <p>Bu tedarikçiye ait ödenecek açık kalem bulunamadı.</p>
+                                        <td colspan="5" class="text-center py-5 text-muted">
+                                            Borç bulunamadı.
                                         </td>
                                     </tr>
                                     {% endfor %}
@@ -201,7 +211,6 @@
 </div>
 
 <script>
-    // 1. SATIRA TIKLAYINCA CHECKBOX SEÇİMİ
     function toggleRow(id) {
         const cb = document.getElementById('cb_' + id);
         if (cb) {
@@ -210,31 +219,20 @@
         }
     }
 
-    // 2. HESAPLAMA VE FORMA AKTARMA
     function hesapla() {
         let toplam = 0.0;
-        
-        // Seçili checkboxları bul
         const checkboxes = document.querySelectorAll('.kalem-checkbox:checked');
-        
-        // Formun içindeki gizli alanı temizle
         const hiddenContainer = document.getElementById('hidden-inputs');
-        if (hiddenContainer) {
-            hiddenContainer.innerHTML = ''; 
-        }
+        if (hiddenContainer) hiddenContainer.innerHTML = ''; 
 
         checkboxes.forEach(cb => {
-            // Tutar Hesabı (Virgül/Nokta düzeltmesi)
             let val = cb.getAttribute('data-kalan');
             if (val) {
-                val = val.replace(',', '.');
+                val = val.replace(',', '.'); 
                 let sayi = parseFloat(val);
-                if (!isNaN(sayi)) {
-                    toplam += sayi;
-                }
+                if (!isNaN(sayi)) toplam += sayi;
             }
 
-            // FORM İÇİNE GİZLİ INPUT EKLE (POST işlemi için kritik)
             if (hiddenContainer) {
                 const hiddenInput = document.createElement('input');
                 hiddenInput.type = 'hidden';
@@ -244,59 +242,39 @@
             }
         });
 
-        // Ekrana Yazdır (Türkçe format)
-        // const formatli = toplam.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        // Input'a yazdır (Nokta formatında yazdırıyoruz ki backend rahat anlasın, formattaki virgül sorun olabilir)
+        // Tutar inputuna nokta formatında yaz (Backend bunu bekler)
+        // input type="number" ise nokta ile çalışır.
         const formatliInput = toplam.toFixed(2);
-        
         const tutarInput = document.querySelector('input[name="tutar"]');
+        
         if (tutarInput) {
-            tutarInput.value = formatliInput; // Input'a nokta ile atıyoruz (1250.50)
+            tutarInput.value = formatliInput;
         }
 
+        // Bilgi notuna virgül formatında yaz (Görsel)
         const info = document.getElementById('dagitilacak-info');
         if (info) {
-            // Görsel olarak virgüllü gösterelim
-            info.innerHTML = "Seçilenlerden hesaplanan: <b>" + toplam.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + "</b>";
+            info.innerHTML = "Seçilen: <b>" + toplam.toLocaleString('tr-TR', { minimumFractionDigits: 2 }) + " TL</b>";
         }
     }
 
-    // 3. ÇEK ALANLARI GİZLE/GÖSTER
     document.addEventListener("DOMContentLoaded", function() {
         const odemeTuru = document.querySelector('select[name="odeme_turu"]');
         const cekDiv = document.getElementById('cek-alanlari');
 
         function toggleCek() {
-            if (odemeTuru && odemeTuru.value === 'cek') {
-                cekDiv.style.display = 'block';
-            } else if (cekDiv) {
-                cekDiv.style.display = 'none';
-            }
+            if (odemeTuru && odemeTuru.value === 'cek') cekDiv.style.display = 'block';
+            else if (cekDiv) cekDiv.style.display = 'none';
         }
 
         if (odemeTuru) {
             odemeTuru.addEventListener('change', toggleCek);
-            toggleCek(); // Sayfa yüklendiğinde de kontrol et
+            toggleCek();
         }
 
-        // Select2 Başlat (jQuery varsa)
         if (typeof $ !== 'undefined' && $.fn.select2) {
-            $('.select2').select2({
-                theme: "bootstrap-5",
-                width: '100%',
-                placeholder: "Tedarikçi Seçiniz"
-            });
+            $('.select2').select2({ theme: "bootstrap-5", width: '100%', placeholder: "Tedarikçi Seçiniz" });
         }
     });
 </script>
-
-<style>
-    /* Tablo satırına hover efekti */
-    tbody tr:hover {
-        background-color: #f0f8ff !important;
-    }
-    .form-text {
-        font-size: 0.85rem;
-    }
-</style>
 {% endblock %}
