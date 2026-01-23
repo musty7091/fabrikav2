@@ -79,27 +79,46 @@ def _normalize_currency(pb):
 
 def get_smart_exchange_rate(obj, guncel_kurlar):
     """
-    Fatura için doğru kuru ve para birimini bulur.
-    Öncelik sırası:
+    Fatura / Hakediş için doğru kuru ve para birimini bulur.
+
+    KRİTİK KURAL:
+      - Hakediş sistemimizde TL tutulur. Hakediş için asla kur uygulanmaz.
+        -> Dönüş her zaman ("TRY", 1.0)
+
+    Fatura için öncelik sırası:
       1) Objede direkt para_birimi ve kur alanları (varsa)
       2) Satınalma -> teklif üzerinden para birimi/kur
       3) En son TCMB güncel kuru
+
     Dönüş: (para_birimi, kur_degeri)
     """
+    # ✅ 0) Hakediş her zaman TL (kur yok)
+    try:
+        # import içeride: circular import riskini azaltır
+        from core.models import Hakedis
+        if isinstance(obj, Hakedis):
+            return "TRY", Decimal("1.0")
+    except Exception:
+        pass
+
     pb = "TRY"
     kur = Decimal("1.0")
 
+    # 1) Objede direkt para birimi (varsa)
     direct_pb = _pick_attr(obj, ["para_birimi", "currency", "doviz_cinsi", "doviz"])
     if direct_pb:
         pb = _normalize_currency(direct_pb)
 
+    # 2) Objede para birimi yoksa / TRY ise, satinalma.teklif para birimine bak
     if pb == "TRY":
         if hasattr(obj, "satinalma") and obj.satinalma and getattr(obj.satinalma, "teklif", None):
             pb = _normalize_currency(getattr(obj.satinalma.teklif, "para_birimi", "TRY"))
 
+    # Para birimi TRY ise kur 1.0
     if pb == "TRY":
         return "TRY", Decimal("1.0")
 
+    # 3) Objede direkt kur (varsa)
     direct_kur = _pick_attr(obj, ["kur_degeri", "kur", "fx_rate", "doviz_kuru"])
     if direct_kur:
         try:
@@ -109,6 +128,7 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
         except Exception:
             pass
 
+    # 4) Satınalma -> teklif kuru
     if hasattr(obj, "satinalma") and obj.satinalma and getattr(obj.satinalma, "teklif", None):
         teklif = obj.satinalma.teklif
         teklif_kur = _pick_attr(teklif, ["kur_degeri", "kur", "fx_rate"])
@@ -120,6 +140,7 @@ def get_smart_exchange_rate(obj, guncel_kurlar):
             except Exception:
                 pass
 
+    # 5) TCMB güncel kuru
     try:
         k = guncel_kurlar.get(pb, Decimal("1.0"))
         k = to_decimal(k)

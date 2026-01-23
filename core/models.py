@@ -692,20 +692,21 @@ class Fatura(models.Model):
 class FaturaKalem(models.Model):
     """
     Fatura satırları (çok kalem)
-    Not: Stok/finans etkilerini model save içine GÖMMÜYORUZ.
-    Bunun için bir sonraki adımda servis yazacağız (transaction.atomic).
+    Not: Stok/finans etkilerini model save içine gömmüyoruz.
     """
+
     fatura = models.ForeignKey(Fatura, on_delete=models.CASCADE, related_name="kalemler", verbose_name="Fatura")
     malzeme = models.ForeignKey(Malzeme, on_delete=models.PROTECT, related_name="fatura_kalemleri", verbose_name="Malzeme")
 
     miktar = models.DecimalField(max_digits=15, decimal_places=3, default=0, verbose_name="Miktar")
 
-    # --- Yeni alanlar (formların beklediği) ---
-    fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat (KDV Hariç)")
+    # Yeni alanlar (formların beklediği)
+    fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat")
     kdv_oran = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
+    kdv_dahil_mi = models.BooleanField(default=False, verbose_name="Bu fiyat KDV dahil mi?")
     aciklama = models.CharField(max_length=255, blank=True, default="", verbose_name="Açıklama")
 
-    # --- Eski alanlar (projenin başka yerleri kullanıyor olabilir; senkron tutacağız) ---
+    # Eski alanlar (geri uyum)
     birim_fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="(Eski) Birim Fiyat", editable=False)
     kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="(Eski) KDV Oranı", editable=False)
 
@@ -716,11 +717,6 @@ class FaturaKalem(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def _sync_legacy_fields(self):
-        """
-        Geriye uyumluluk:
-        - Yeni alanlar (fiyat, kdv_oran) üzerinden tek kaynak gibi davran.
-        - Eski alanları (birim_fiyat, kdv_orani) her kayıtta otomatik güncelle.
-        """
         # fiyat -> birim_fiyat
         if self.fiyat is None and self.birim_fiyat is not None:
             self.fiyat = self.birim_fiyat
@@ -731,26 +727,52 @@ class FaturaKalem(models.Model):
             self.kdv_oran = self.kdv_orani
         self.kdv_orani = self.kdv_oran if self.kdv_oran is not None else 0
 
-        # aciklama None gelirse boş string yap
         if self.aciklama is None:
             self.aciklama = ""
 
     def clean(self):
         self._sync_legacy_fields()
 
-        if self.miktar is None or self.miktar <= 0:
+        if self.miktar is None or to_decimal(self.miktar) <= 0:
             raise ValidationError({"miktar": "Miktar 0'dan büyük olmalı."})
 
-        if self.fiyat is None or self.fiyat < 0:
+        if self.fiyat is None or to_decimal(self.fiyat) < 0:
             raise ValidationError({"fiyat": "Birim fiyat negatif olamaz."})
 
     def recalc(self):
+        """
+        KDV İKİ KEZ EKLENMESİN diye kritik nokta burası:
+
+        - kdv_dahil_mi = True ise: fiyat KDV DAHİL kabul edilir.
+          genel = miktar * fiyat
+          ara   = genel / (1 + oran)
+          kdv   = genel - ara
+
+        - kdv_dahil_mi = False ise: fiyat KDV HARİÇ kabul edilir.
+          ara   = miktar * fiyat
+          kdv   = ara * oran
+          genel = ara + kdv
+        """
         self._sync_legacy_fields()
 
-        kdv = Decimal("0") if self.kdv_oran == -1 else Decimal(str(self.kdv_oran))
-        ara = (to_decimal(self.miktar) * to_decimal(self.fiyat)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        kdv_tutar = (ara * (kdv / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        genel = (ara + kdv_tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        kdv_yuzde = Decimal("0") if int(self.kdv_oran or 0) == -1 else Decimal(str(self.kdv_oran or 0))
+        oran = (kdv_yuzde / Decimal("100")).quantize(Decimal("0.0001"))
+
+        miktar = to_decimal(self.miktar)
+        fiyat = to_decimal(self.fiyat)
+
+        if self.kdv_dahil_mi:
+            genel = (miktar * fiyat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            bolen = (Decimal("1.0") + oran)
+            if bolen <= 0:
+                ara = genel
+            else:
+                ara = (genel / bolen).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            kdv_tutar = (genel - ara).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        else:
+            ara = (miktar * fiyat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            kdv_tutar = (ara * oran).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            genel = (ara + kdv_tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         self.satir_ara_toplam = ara
         self.satir_kdv = kdv_tutar

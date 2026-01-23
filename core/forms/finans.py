@@ -129,13 +129,14 @@ class SerbestFaturaGirisForm(forms.ModelForm):
 class FaturaKalemForm(forms.ModelForm):
     class Meta:
         model = FaturaKalem
-        fields = ["malzeme", "miktar", "fiyat", "kdv_oran", "aciklama"]
+        fields = ['malzeme', 'miktar', 'fiyat', 'kdv_oran', 'kdv_dahil_mi', 'aciklama']
         widgets = {
-            "malzeme": forms.Select(attrs={"class": "form-select"}),
-            "miktar": forms.NumberInput(attrs={"class": "form-control", "step": "0.001", "min": "0"}),
-            "fiyat": forms.NumberInput(attrs={"class": "form-control", "step": "0.0001", "min": "0"}),
-            "kdv_oran": forms.Select(attrs={"class": "form-select"}),
-            "aciklama": forms.TextInput(attrs={"class": "form-control", "placeholder": "Açıklama"}),
+            'malzeme': forms.Select(attrs={'class': 'form-select'}),
+            'miktar': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001'}),
+            'fiyat': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.0001'}),
+            'kdv_oran': forms.Select(attrs={'class': 'form-select'}),
+            'kdv_dahil_mi': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'aciklama': forms.TextInput(attrs={'class': 'form-control'}),
         }
 
     def clean_miktar(self):

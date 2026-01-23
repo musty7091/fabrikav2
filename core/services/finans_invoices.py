@@ -1,5 +1,5 @@
 # core/services/finans_invoices.py
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.utils import timezone
@@ -28,19 +28,33 @@ class InvoiceService:
         
         malzeme = teklif.malzeme
         
-        # Fiyatlar
-        birim_fiyat = teklif.birim_fiyat
+        # Fiyatlar ve KDV Bilgisi
+        ham_fiyat = teklif.birim_fiyat
         kdv_orani = teklif.kdv_orani
         
+        # --- DÜZELTME: KDV AYIKLAMA MANTIĞI VE YUVARLAMA ---
+        # FaturaKalem modeli max_digits=15, decimal_places=4 sınırına sahiptir.
+        # Bölme işlemi sonucu (örn: 100/1.2) çok uzun küsurat çıkarsa veritabanı hata verir.
+        # Bu yüzden sonucu .quantize(Decimal("0.0001")) ile yuvarlayarak kaydediyoruz.
+        
+        if teklif.kdv_dahil_mi and kdv_orani > 0:
+            # Örnek: 120 TL (%20 Dahil) -> 120 / 1.20 = 100 TL
+            katsayi = Decimal('1.0') + (Decimal(kdv_orani) / Decimal('100.0'))
+            hesaplanan_fiyat = ham_fiyat / katsayi
+            
+            # YUVARLAMA (4 hane hassasiyet)
+            birim_fiyat = hesaplanan_fiyat.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        else:
+            birim_fiyat = ham_fiyat
+        # -------------------------------------
+        
         # 3. Fatura Kalemini Otomatik Oluştur
-        # Not: Malzeme varsa oluştur, hizmet ise (malzeme=None) sisteminize göre ayarlanmalı.
-        # FaturaKalem modelinde malzeme alanı zorunlu olduğu için sadece malzeme varsa devam ediyoruz.
         if malzeme:
             kalem = FaturaKalem.objects.create(
                 fatura=fatura,
                 malzeme=malzeme,
                 miktar=islem_miktari,
-                fiyat=birim_fiyat,
+                fiyat=birim_fiyat,      # Yuvarlanmış Matrah Fiyat
                 kdv_oran=kdv_orani,
                 aciklama=f"Siparişten otomatik: {siparis.id}"
             )
