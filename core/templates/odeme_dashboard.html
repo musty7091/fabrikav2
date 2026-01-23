@@ -1,13 +1,17 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Finans ve Ödeme Merkezi{% endblock %}
+{% block title %}Finansal İşlemler{% endblock %}
 
 {% block extra_css %}
 <style>
-    .card-stats { border: none; border-radius: 10px; transition: transform 0.2s; }
-    .card-stats:hover { transform: translateY(-5px); }
-    .icon-box { width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 1.5rem; }
+    .card-stats { border: none; border-radius: 12px; transition: transform 0.2s; }
+    .card-stats:hover { transform: translateY(-4px); }
+    .icon-box {
+        width: 50px; height: 50px; display: flex; align-items: center; justify-content: center;
+        border-radius: 12px; font-size: 1.5rem;
+    }
+    .table thead th { font-size: .82rem; letter-spacing: .3px; }
 </style>
 {% endblock %}
 
@@ -16,47 +20,46 @@
 
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h3 class="fw-bold text-dark mb-0"><i class="fas fa-wallet me-2 text-success"></i> FİNANS KOKPİTİ</h3>
-            <p class="text-muted small mb-0">Tüm dövizli borçlar <b>güncel kurla TL'ye çevrilerek</b> gösterilmektedir.</p>
+            <h3 class="fw-bold text-dark mb-0">
+                <i class="fas fa-coins me-2 text-success"></i> FİNANSAL İŞLEMLER
+            </h3>
+            <p class="text-muted small mb-0">
+                Fatura (malzeme) + hakediş borçları ve çek ödeme takibi.
+            </p>
         </div>
+
         <div>
-            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary me-2">
+            <a href="{% url 'dashboard' %}" class="btn btn-secondary me-2">
                 <i class="fas fa-home me-1"></i> Ana Menü
             </a>
 
-            <a href="{% url 'gider_listesi' %}" class="btn btn-outline-primary me-2">
-                <i class="fa-solid fa-receipt me-1"></i> Giderler
+            <a href="{% url 'odeme_yap' %}" class="btn btn-success me-2">
+                <i class="fas fa-money-bill-wave me-1"></i> Ödeme Yap
             </a>
 
-            <a href="{% url 'odeme_yap' %}" class="btn btn-success">
-                <i class="fas fa-money-bill-wave me-1"></i> Ödeme Yap
+            <a href="{% url 'cek_takibi' %}" class="btn btn-outline-danger">
+                <i class="fas fa-money-check me-1"></i> Çek Takibi
             </a>
         </div>
     </div>
 
-    {% if kurlar %}
-    <div class="alert alert-info py-2 mb-4 d-flex align-items-center">
-        <i class="fas fa-exchange-alt me-2"></i>
-        <span><strong>TCMB Güncel Kurlar:</strong> USD: {{ kurlar.USD }} | EUR: {{ kurlar.EUR }} | GBP: {{ kurlar.GBP }}</span>
-    </div>
-    {% endif %}
-
+    <!-- KPI Kartları -->
     <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card card-stats shadow-sm h-100">
+            <div class="card card-stats shadow-sm h-100 border-start border-4 border-info">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <p class="text-muted mb-1 text-uppercase small fw-bold">Toplam Piyasa Borcu</p>
-                            <h2 class="fw-bold text-dark mb-0">{{ toplam_borc|floatformat:2|intcomma }} ₺</h2>
+                            <p class="text-muted mb-1 text-uppercase small fw-bold">Ödenmemiş Fatura Toplamı</p>
+                            <h2 class="fw-bold text-dark mb-0">
+                                {{ odenmemis_fatura_toplam|floatformat:2|intcomma }} ₺
+                            </h2>
                         </div>
-                        <div class="icon-box bg-danger bg-opacity-10 text-danger">
-                            <i class="fas fa-chart-line"></i>
+                        <div class="icon-box bg-info bg-opacity-10 text-info">
+                            <i class="fas fa-file-invoice"></i>
                         </div>
                     </div>
-                    <div class="mt-3 small">
-                        <span class="text-danger"><i class="fas fa-arrow-up"></i> Güncel TL Karşılığı</span>
-                    </div>
+                    <div class="mt-3 small text-muted">Teslim edilmiş malzeme borcu</div>
                 </div>
             </div>
         </div>
@@ -66,105 +69,139 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <p class="text-muted mb-1 text-uppercase small fw-bold">Hakediş Borçları</p>
-                            <h3 class="fw-bold text-dark mb-0">{{ hakedis_toplam|floatformat:2|intcomma }} ₺</h3>
+                            <p class="text-muted mb-1 text-uppercase small fw-bold">Ödenmemiş Hakediş Toplamı</p>
+                            <h2 class="fw-bold text-dark mb-0">
+                                {{ odenmemis_hakedis_toplam|floatformat:2|intcomma }} ₺
+                            </h2>
                         </div>
                         <div class="icon-box bg-warning bg-opacity-10 text-warning">
                             <i class="fas fa-hard-hat"></i>
                         </div>
                     </div>
-                    <div class="mt-3 small text-muted">Hizmet/Taşeron ödemeleri</div>
+                    <div class="mt-3 small text-muted">Onaylı hakedişlerde kalan</div>
                 </div>
             </div>
         </div>
 
         <div class="col-md-4">
-            <div class="card card-stats shadow-sm h-100 border-start border-4 border-info">
+            <div class="card card-stats shadow-sm h-100 border-start border-4 border-danger">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <p class="text-muted mb-1 text-uppercase small fw-bold">Malzeme Borçları</p>
-                            <h3 class="fw-bold text-dark mb-0">{{ malzeme_borcu|floatformat:2|intcomma }} ₺</h3>
+                            <p class="text-muted mb-1 text-uppercase small fw-bold">Cari Borç Toplamı</p>
+                            <h2 class="fw-bold text-dark mb-0">
+                                {{ cari_borc_toplam|floatformat:2|intcomma }} ₺
+                            </h2>
                         </div>
-                        <div class="icon-box bg-info bg-opacity-10 text-info">
-                            <i class="fas fa-boxes"></i>
+                        <div class="icon-box bg-danger bg-opacity-10 text-danger">
+                            <i class="fas fa-chart-line"></i>
                         </div>
                     </div>
-                    <div class="mt-3 small text-muted">Depoya giren mal bedeli</div>
+                    <div class="mt-3 small text-muted">Fatura + Hakediş toplamı</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-lg-6 mb-4">
-            <div class="card shadow border-0 h-100">
-                <div class="card-header bg-white py-3 border-bottom">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="fas fa-file-invoice me-2 text-warning"></i> SON ONAYLANAN HAKEDİŞLER</h6>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light small text-muted">
-                            <tr>
-                                <th class="ps-3">Tarih</th>
-                                <th>Taşeron / İş</th>
-                                <th class="text-end pe-3">Net Tutar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for hakedis in son_hakedisler %}
-                            <tr>
-                                <td class="ps-3 text-muted">{{ hakedis.tarih|date:"d.m.Y" }}</td>
-                                <td>
-                                    <div class="fw-bold text-dark">{{ hakedis.satinalma.teklif.tedarikci.firma_unvani }}</div>
-                                    <div class="small text-muted">{{ hakedis.satinalma.teklif.is_kalemi.isim }} (#{{ hakedis.hakedis_no }})</div>
-                                </td>
-                                <td class="text-end pe-3 fw-bold text-dark">
-                                    {{ hakedis.odenecek_net_tutar|floatformat:2 }} {{ hakedis.satinalma.teklif.para_birimi }}
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr><td colspan="3" class="text-center py-4 text-muted">Henüz kayıtlı hakediş yok.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+    <!-- Cari Bakiye Listesi -->
+    <div class="card shadow border-0 mb-4">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <h6 class="mb-0 fw-bold text-dark">
+                <i class="fas fa-address-book me-2 text-primary"></i> Cari Bakiye Listesi
+            </h6>
+            <small class="text-muted">Ödeme butonu ilgili cariyi seçili getirir.</small>
         </div>
 
-        <div class="col-lg-6 mb-4">
-            <div class="card shadow border-0 h-100">
-                <div class="card-header bg-white py-3 border-bottom">
-                    <h6 class="mb-0 fw-bold text-dark"><i class="fas fa-truck-loading me-2 text-info"></i> SON MALZEME ALIMLARI</h6>
-                </div>
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light small text-muted">
-                            <tr>
-                                <th class="ps-3">Tarih</th>
-                                <th>Tedarikçi / Malzeme</th>
-                                <th class="text-center">Tutar</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for alim in son_alimlar %}
-                            <tr>
-                                <td class="ps-3 text-muted">{{ alim.created_at|date:"d.m" }}</td>
-                                <td>
-                                    <div class="fw-bold text-dark">{{ alim.teklif.tedarikci.firma_unvani }}</div>
-                                    <div class="small text-muted">{{ alim.teklif.malzeme.isim }}</div>
-                                </td>
-                                <td class="text-center fw-bold">
-                                    {{ alim.teklif.toplam_fiyat_tl|floatformat:2 }} TL
-                                </td>
-                            </tr>
-                            {% empty %}
-                            <tr><td colspan="3" class="text-center py-4 text-muted">Henüz malzeme girişi yok.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light text-muted">
+                    <tr>
+                        <th class="ps-3">Firma</th>
+                        <th class="text-end">Fatura Kalan</th>
+                        <th class="text-end">Hakediş Kalan</th>
+                        <th class="text-end">Toplam Borç</th>
+                        <th class="text-end pe-3">İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cari_listesi %}
+                        <tr>
+                            <td class="ps-3">
+                                <div class="fw-bold text-dark">{{ row.firma }}</div>
+                                <div class="small text-muted">#{{ row.id }}</div>
+                            </td>
+                            <td class="text-end">
+                                {{ row.malzeme_kalan|floatformat:2|intcomma }} ₺
+                            </td>
+                            <td class="text-end">
+                                {{ row.hakedis_kalan|floatformat:2|intcomma }} ₺
+                            </td>
+                            <td class="text-end fw-bold">
+                                {{ row.toplam_kalan|floatformat:2|intcomma }} ₺
+                            </td>
+                            <td class="text-end pe-3">
+                                <a class="btn btn-sm btn-success"
+                                   href="{% url 'odeme_yap' %}?tedarikci_id={{ row.id }}">
+                                    <i class="fas fa-money-bill-wave me-1"></i> Ödeme Yap
+                                </a>
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="{% url 'cari_ekstre' row.id %}">
+                                    Ekstre
+                                </a>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center py-4 text-muted">
+                                Cari borcu olan kayıt bulunmuyor.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Yaklaşan Çekler -->
+    <div class="card shadow border-0">
+        <div class="card-header bg-danger text-white py-2 d-flex justify-content-between align-items-center">
+            <small class="fw-bold">
+                <i class="fas fa-money-check me-2"></i> YAKLAŞAN ÇEK ÖDEMELERİ ({{ bugun|date:"d.m.Y" }} - {{ ufuk|date:"d.m.Y" }})
+            </small>
+            <small class="fw-bold">Toplam: {{ yaklasan_cek_toplam|floatformat:2|intcomma }} ₺</small>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light text-muted">
+                    <tr>
+                        <th class="ps-3">Vade</th>
+                        <th>Firma</th>
+                        <th>Çek No</th>
+                        <th class="text-end pe-3">Tutar</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in yaklasan_cekler %}
+                        <tr>
+                            <td class="ps-3 text-muted">{{ c.vade_tarihi|date:"d.m.Y" }}</td>
+                            <td class="fw-bold text-dark">{{ c.tedarikci.firma_unvani }}</td>
+                            <td class="text-muted">{{ c.cek_no|default:"-" }}</td>
+                            <td class="text-end pe-3 fw-bold">{{ c.tutar|floatformat:2|intcomma }} ₺</td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">
+                                Bu aralıkta yaklaşan çek bulunmuyor.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card-body text-muted small">
+            Not: Çekler “Ödeme & Çek Çıkışı” kayıtlarından gelir.
         </div>
     </div>
 

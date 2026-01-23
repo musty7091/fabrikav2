@@ -852,45 +852,159 @@ def cari_ekstre(request, tedarikci_id):
 
 @login_required
 def odeme_dashboard(request):
-    """
-    FİNANS KOKPİTİ
-    - Fatura kalan borç hesaplarında allocation destekli hesap kullanır.
-    """
     if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI']):
         return redirect('erisim_engellendi')
 
-    guncel_kurlar = tcmb_kur_getir()
+    bugun = timezone.now().date()
+    ufuk = bugun + timezone.timedelta(days=30)
 
-    toplam_borc_tl = Decimal('0.00')
-    hakedis_toplam_tl = Decimal('0.00')
-    malzeme_borcu_tl = Decimal('0.00')
+    # =========================
+    # 1) ÖDENMEMİŞ HAKEDİŞ (TL)
+    # =========================
+    odenmemis_hakedis_toplam = Decimal('0.00')
 
-    # A) Tüm Faturalar (Malzeme)
-    for fat in Fatura.objects.all():
-        kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
-        if kalan_tl > Decimal("0.01"):
-            toplam_borc_tl += kalan_tl
-            malzeme_borcu_tl += kalan_tl
+    hakedis_qs = (
+        Hakedis.objects
+        .filter(onay_durumu=True)
+        .select_related('satinalma', 'satinalma__teklif', 'satinalma__teklif__tedarikci')
+        .order_by('-tarih')
+    )
 
-    # B) Onaylı Hakedişler
-    for hk in Hakedis.objects.filter(onay_durumu=True):
-        kalan_orj = to_decimal(hk.odenecek_net_tutar) - to_decimal(hk.fiili_odenen_tutar)
-        if kalan_orj > Decimal("0.1"):
-            pb, kur = get_smart_exchange_rate(hk, guncel_kurlar)
-            tl_tutar = kalan_orj * kur
-            toplam_borc_tl += tl_tutar
-            hakedis_toplam_tl += tl_tutar
+    for hk in hakedis_qs:
+        kalan = (to_decimal(hk.odenecek_net_tutar) - to_decimal(hk.fiili_odenen_tutar)).quantize(Decimal('0.01'))
+        if kalan > Decimal('0.00'):
+            odenmemis_hakedis_toplam += kalan
 
-    son_hakedisler = Hakedis.objects.order_by('-tarih')[:5]
-    son_alimlar = SatinAlma.objects.filter(teklif__malzeme__isnull=False).order_by('-created_at')[:5]
+    # ==========================================
+    # 2) ÖDENMEMİŞ FATURA (MALZEME BORCU) (TL)
+    #    (Teslim edilen malzeme tutarı - fiili ödenen)
+    # ==========================================
+    odenmemis_fatura_toplam = Decimal('0.00')
+
+    malzeme_siparisleri = (
+        SatinAlma.objects
+        .filter(teklif__malzeme__isnull=False)
+        .exclude(teslimat_durumu='bekliyor')
+        .select_related('teklif', 'teklif__tedarikci', 'teklif__malzeme')
+        .order_by('-created_at')
+    )
+
+    for sip in malzeme_siparisleri:
+        try:
+            miktar = to_decimal(sip.teslim_edilen)
+            fiyat = to_decimal(sip.teklif.birim_fiyat)
+            kur = to_decimal(sip.teklif.kur_degeri)
+            kdv_orani = to_decimal(sip.teklif.kdv_orani)
+
+            ara_toplam = miktar * fiyat * kur
+            kdvli_toplam = (ara_toplam * (Decimal('1') + (kdv_orani / Decimal('100')))).quantize(Decimal('0.01'))
+            odenen = to_decimal(getattr(sip, "fiili_odenen_tutar", Decimal('0.00'))).quantize(Decimal('0.01'))
+            kalan = (kdvli_toplam - odenen).quantize(Decimal('0.01'))
+
+            if kalan > Decimal('0.00'):
+                odenmemis_fatura_toplam += kalan
+        except Exception:
+            continue
+
+    cari_borc_toplam = (odenmemis_fatura_toplam + odenmemis_hakedis_toplam).quantize(Decimal('0.01'))
+
+    # ==========================================
+    # 3) CARİ BAKİYE LİSTESİ (tedarikçi bazlı)
+    #    (malzeme kalan + hakediş kalan)
+    # ==========================================
+    cari_listesi = []
+
+    tedarikciler = Tedarikci.objects.all().order_by('firma_unvani')
+
+    # tedarikçi bazlı hakediş kalanları
+    hakedis_kalan_map = {}
+    for hk in hakedis_qs:
+        ted = None
+        try:
+            ted = hk.satinalma.teklif.tedarikci
+        except Exception:
+            ted = None
+
+        if not ted:
+            continue
+
+        kalan = (to_decimal(hk.odenecek_net_tutar) - to_decimal(hk.fiili_odenen_tutar)).quantize(Decimal('0.01'))
+        if kalan <= 0:
+            continue
+
+        hakedis_kalan_map[ted.id] = (hakedis_kalan_map.get(ted.id, Decimal('0.00')) + kalan).quantize(Decimal('0.01'))
+
+    # tedarikçi bazlı malzeme kalanları
+    malzeme_kalan_map = {}
+    for sip in malzeme_siparisleri:
+        ted = getattr(sip.teklif, "tedarikci", None)
+        if not ted:
+            continue
+
+        try:
+            miktar = to_decimal(sip.teslim_edilen)
+            fiyat = to_decimal(sip.teklif.birim_fiyat)
+            kur = to_decimal(sip.teklif.kur_degeri)
+            kdv_orani = to_decimal(sip.teklif.kdv_orani)
+
+            ara_toplam = miktar * fiyat * kur
+            kdvli_toplam = (ara_toplam * (Decimal('1') + (kdv_orani / Decimal('100')))).quantize(Decimal('0.01'))
+            odenen = to_decimal(getattr(sip, "fiili_odenen_tutar", Decimal('0.00'))).quantize(Decimal('0.01'))
+            kalan = (kdvli_toplam - odenen).quantize(Decimal('0.01'))
+
+            if kalan <= 0:
+                continue
+
+            malzeme_kalan_map[ted.id] = (malzeme_kalan_map.get(ted.id, Decimal('0.00')) + kalan).quantize(Decimal('0.01'))
+        except Exception:
+            continue
+
+    for ted in tedarikciler:
+        hk_kalan = hakedis_kalan_map.get(ted.id, Decimal('0.00'))
+        mal_kalan = malzeme_kalan_map.get(ted.id, Decimal('0.00'))
+        toplam = (hk_kalan + mal_kalan).quantize(Decimal('0.01'))
+
+        if toplam > 0:
+            cari_listesi.append({
+                "id": ted.id,
+                "firma": ted.firma_unvani,
+                "hakedis_kalan": hk_kalan,
+                "malzeme_kalan": mal_kalan,
+                "toplam_kalan": toplam,
+            })
+
+    # büyük borç üstte gözüksün
+    cari_listesi.sort(key=lambda x: x["toplam_kalan"], reverse=True)
+
+    # ==========================================
+    # 4) YAKLAŞAN ÇEKLER (30 gün)
+    # ==========================================
+    yaklasan_cekler = (
+        Odeme.objects
+        .filter(odeme_turu='cek', vade_tarihi__isnull=False, vade_tarihi__gte=bugun, vade_tarihi__lte=ufuk)
+        .select_related('tedarikci')
+        .order_by('vade_tarihi', 'id')
+    )
+    yaklasan_cek_toplam = yaklasan_cekler.aggregate(t=Sum('tutar'))['t'] or Decimal('0.00')
 
     context = {
-        'toplam_borc': toplam_borc_tl,
-        'hakedis_toplam': hakedis_toplam_tl,
-        'malzeme_borcu': malzeme_borcu_tl,
-        'son_hakedisler': son_hakedisler,
-        'son_alimlar': son_alimlar,
-        'kurlar': guncel_kurlar
+        # KPI Kartları
+        'odenmemis_fatura_toplam': odenmemis_fatura_toplam,
+        'odenmemis_hakedis_toplam': odenmemis_hakedis_toplam,
+        'cari_borc_toplam': cari_borc_toplam,
+
+        # Cari liste
+        'cari_listesi': cari_listesi,
+
+        # Çekler
+        'yaklasan_cekler': yaklasan_cekler,
+        'yaklasan_cek_toplam': yaklasan_cek_toplam,
+        'bugun': bugun,
+        'ufuk': ufuk,
+
+        # (Sayfada istersen kalsın diye)
+        'son_hakedisler': Hakedis.objects.order_by('-tarih')[:5],
+        'son_alimlar': SatinAlma.objects.filter(teklif__malzeme__isnull=False).order_by('-created_at')[:5],
     }
     return render(request, 'odeme_dashboard.html', context)
 
