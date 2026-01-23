@@ -5,6 +5,7 @@ from django.db.models import Sum, Q, F
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+
 from core.utils import to_decimal
 
 # ==========================================
@@ -565,8 +566,10 @@ class Hakedis(models.Model):
             raise ValidationError({
                 "tamamlanma_orani": f"Toplam ilerleme %100'ü geçemez! Kalan maksimum oran: %{kalan}"
             })
+    
 
     def save(self, *args, **kwargs):
+        from core.services.finans_payments import PaymentService
         with transaction.atomic():
             if self.satinalma_id:
                 SatinAlma.objects.select_for_update().filter(pk=self.satinalma_id).first()
