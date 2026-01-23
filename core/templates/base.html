@@ -128,7 +128,12 @@
            title="Serbest Fatura Girişi" aria-label="Serbest Fatura Girişi">
             <i class="fa-solid fa-file-circle-plus"></i>
         </a>
-
+        
+        <a href="{% url 'gider_listesi' %}" class="fab" style="background:#ffffff; color:#6f42c1; border:2px solid #6f42c1;"
+            data-bs-toggle="tooltip" data-bs-placement="left"
+            title="Giderler" aria-label="Giderler">
+            <i class="fa-solid fa-receipt"></i>
+        </a>
         <!-- Ana Sayfa -->
         <a href="{% url 'dashboard' %}" class="fab fab-home"
            data-bs-toggle="tooltip" data-bs-placement="left"

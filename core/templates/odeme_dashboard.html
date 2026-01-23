@@ -20,13 +20,14 @@
             <p class="text-muted small mb-0">Tüm dövizli borçlar <b>güncel kurla TL'ye çevrilerek</b> gösterilmektedir.</p>
         </div>
         <div>
-            <a href="{% url 'gider_listesi' %}" class="btn btn-outline-secondary">
-            Masraf Gider Ekle
-            </a>
-            <a href="{% url 'dashboard' %}" class="btn btn-secondary me-2">
+            <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary me-2">
                 <i class="fas fa-home me-1"></i> Ana Menü
             </a>
-            
+
+            <a href="{% url 'gider_listesi' %}" class="btn btn-outline-primary me-2">
+                <i class="fa-solid fa-receipt me-1"></i> Giderler
+            </a>
+
             <a href="{% url 'odeme_yap' %}" class="btn btn-success">
                 <i class="fas fa-money-bill-wave me-1"></i> Ödeme Yap
             </a>
