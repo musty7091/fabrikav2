@@ -573,51 +573,52 @@ class Hakedis(models.Model):
 
             self.full_clean()
 
-            try:
-                teklif = self.satinalma.teklif
-                islem_kuru = to_decimal(teklif.kur_degeri or 1)
+            teklif = self.satinalma.teklif
 
-                if self.kdv_orani is None:
-                    self.kdv_orani = teklif.kdv_orani
+            # 1) KDV oranı
+            if self.kdv_orani is None:
+                self.kdv_orani = teklif.kdv_orani
 
-                birim_fiyat = to_decimal(teklif.birim_fiyat)
-                if teklif.kdv_dahil_mi:
-                    kdv_payi = to_decimal(teklif.kdv_orani)
-                    birim_fiyat = birim_fiyat / (Decimal("1.0") + (kdv_payi / Decimal("100.0")))
+            # 2) Teklif toplamını (ORJ para biriminde) KDV dahil/hariç doğru hesapla
+            tutar_orj_kdv_haric, kdv_orj, toplam_orj_kdv_dahil = PaymentService.teklif_tutarlarini_hesapla(
+                miktar=teklif.miktar,
+                birim_fiyat=teklif.birim_fiyat,
+                kdv_orani=(teklif.kdv_orani if teklif.kdv_orani != -1 else 0),
+                kdv_dahil_mi=bool(teklif.kdv_dahil_mi),
+            )
 
-                miktar = to_decimal(self.satinalma.toplam_miktar)
-                sozlesme_toplam_tl = birim_fiyat * miktar * islem_kuru
+            # 3) TL'ye çevir (sadece 1 kere)
+            kur = to_decimal(teklif.kur_degeri or 1)
+            toplam_tl_kdv_dahil = (to_decimal(toplam_orj_kdv_dahil) * kur).quantize(Decimal("0.01"))
+            brut_tl_kdv_haric = (to_decimal(tutar_orj_kdv_haric) * kur).quantize(Decimal("0.01"))
+            kdv_tl = (to_decimal(kdv_orj) * kur).quantize(Decimal("0.01"))
 
-                oran = to_decimal(self.tamamlanma_orani or 0)
-                self.brut_tutar = (sozlesme_toplam_tl * (oran / Decimal("100.0"))).quantize(Decimal("0.01"))
+            # 4) Bu hakediş yüzdesi
+            oran = to_decimal(self.tamamlanma_orani or 0)
+            oran_katsayi = (oran / Decimal("100.0"))
 
-                kdv_orani = to_decimal(self.kdv_orani or 0)
-                self.kdv_tutari = (self.brut_tutar * (kdv_orani / Decimal("100.0"))).quantize(Decimal("0.01"))
+            # Hakediş brut ve kdv TL
+            self.brut_tutar = (brut_tl_kdv_haric * oran_katsayi).quantize(Decimal("0.01"))
+            self.kdv_tutari = (kdv_tl * oran_katsayi).quantize(Decimal("0.01"))
 
-                self.stopaj_tutari = (
-                    self.brut_tutar * (to_decimal(self.stopaj_orani or 0) / Decimal("100.0"))
-                ).quantize(Decimal("0.01"))
-                self.teminat_tutari = (
-                    self.brut_tutar * (to_decimal(self.teminat_orani or 0) / Decimal("100.0"))
-                ).quantize(Decimal("0.01"))
+            # 5) Kesintiler
+            self.stopaj_tutari = (self.brut_tutar * (to_decimal(self.stopaj_orani or 0) / Decimal("100.0"))).quantize(Decimal("0.01"))
+            self.teminat_tutari = (self.brut_tutar * (to_decimal(self.teminat_orani or 0) / Decimal("100.0"))).quantize(Decimal("0.01"))
 
-                toplam_alacak = self.brut_tutar + self.kdv_tutari
-                toplam_kesinti = (
-                    self.stopaj_tutari
-                    + self.teminat_tutari
-                    + to_decimal(self.avans_kesintisi)
-                    + to_decimal(self.diger_kesintiler)
-                )
+            toplam_alacak = self.brut_tutar + self.kdv_tutari
+            toplam_kesinti = (
+                self.stopaj_tutari
+                + self.teminat_tutari
+                + to_decimal(self.avans_kesintisi)
+                + to_decimal(self.diger_kesintiler)
+            )
 
-                self.odenecek_net_tutar = (toplam_alacak - toplam_kesinti).quantize(Decimal("0.01"))
-
-            except Exception:
-                pass
+            self.odenecek_net_tutar = (toplam_alacak - toplam_kesinti).quantize(Decimal("0.01"))
 
             super().save(*args, **kwargs)
 
-    def __str__(self):
-        return f"Hakediş #{self.hakedis_no}"
+        def __str__(self):
+            return f"Hakediş #{self.hakedis_no}"
 
     class Meta:
         verbose_name_plural = "6. Taşeron Hakedişleri"
