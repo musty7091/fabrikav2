@@ -1,23 +1,42 @@
 {% extends "base.html" %}
-{% block title %}{% if edit_mode %}Gider Düzenle{% else %}Yeni Gider Ekle{% endif %} | AECO Fabrika Yönetim{% endblock %}
+{% block title %}Yeni Gider Ekle | AECO{% endblock %}
+
+{% block extra_css %}
+<style>
+  .page-wrap { max-width: 860px; margin: 30px auto; }
+  .card-soft { background:#fff; border-radius:16px; box-shadow:0 8px 22px rgba(0,0,0,.06); border:1px solid rgba(0,0,0,.06); }
+  .card-pad { padding: 26px; }
+  .form-title { font-weight: 800; font-size: 1.4rem; }
+  .subtle { color:#6c757d; font-size:.9rem; }
+  .tl-preview {
+    border: 1px solid rgba(0,0,0,.08);
+    background: #f8f9fa;
+    border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .tl-preview .value { font-size: 1.25rem; font-weight: 800; }
+  .help-kur { margin-top: 6px; font-size: .85rem; color:#6c757d; }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="page-wrap">
 
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3 class="mb-0">{% if edit_mode %}Gider Düzenle{% else %}Yeni Gider Ekle{% endif %}</h3>
-    <a class="btn btn-outline-secondary" href="{% url 'gider_listesi' %}">
+    <div>
+      <div class="form-title"><i class="fa-solid fa-file-circle-plus me-2"></i>Yeni Gider Ekle</div>
+      <div class="subtle">Kayıt öncesi TL karşılığı otomatik hesaplanır. Döviz kurunu TCMB’den alır (tarih seçiliyse o günün kuru).</div>
+    </div>
+    <a class="btn btn-outline-secondary rounded-pill" href="{% url 'gider_listesi' %}">
       <i class="fa-solid fa-arrow-left me-1"></i> Giderler
     </a>
   </div>
 
-  <div class="form-container">
-    <div class="form-title">
-      <i class="fa-solid fa-receipt me-2"></i>
-      {% if edit_mode %}Kayıt Güncelle{% else %}Yeni Kayıt{% endif %}
-    </div>
+  <div class="card-soft card-pad">
+    <div class="fw-bold mb-3"><i class="fa-solid fa-clipboard-list me-2"></i>Yeni Kayıt</div>
+    <hr class="mt-0">
 
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" novalidate>
       {% csrf_token %}
 
       {% if form.non_field_errors %}
@@ -25,78 +44,110 @@
       {% endif %}
 
       <div class="row g-3">
+
         <div class="col-12">
           <label class="form-label fw-semibold">Gider Türü</label>
           {{ form.kategori }}
-          {% if form.kategori.errors %}<div class="text-danger small">{{ form.kategori.errors }}</div>{% endif %}
+          {% if form.kategori.errors %}<div class="text-danger small mt-1">{{ form.kategori.errors }}</div>{% endif %}
         </div>
 
         <div class="col-12">
           <label class="form-label fw-semibold">Harcama Açıklaması</label>
           {{ form.aciklama }}
-          {% if form.aciklama.errors %}<div class="text-danger small">{{ form.aciklama.errors }}</div>{% endif %}
+          {% if form.aciklama.errors %}<div class="text-danger small mt-1">{{ form.aciklama.errors }}</div>{% endif %}
         </div>
 
         <div class="col-md-6">
           <label class="form-label fw-semibold">Tutar</label>
           {{ form.tutar }}
-          {% if form.tutar.errors %}<div class="text-danger small">{{ form.tutar.errors }}</div>{% endif %}
+          {% if form.tutar.errors %}<div class="text-danger small mt-1">{{ form.tutar.errors }}</div>{% endif %}
         </div>
 
         <div class="col-md-6">
           <label class="form-label fw-semibold">Para Birimi</label>
           {{ form.para_birimi }}
-          {% if form.para_birimi.errors %}<div class="text-danger small">{{ form.para_birimi.errors }}</div>{% endif %}
+          {% if form.para_birimi.errors %}<div class="text-danger small mt-1">{{ form.para_birimi.errors }}</div>{% endif %}
         </div>
 
         <div class="col-md-6">
           <label class="form-label fw-semibold">İşlem Kuru</label>
           {{ form.kur_degeri }}
-          <div class="form-text">TL ise 1.0000 bırakabilirsin.</div>
-          {% if form.kur_degeri.errors %}<div class="text-danger small">{{ form.kur_degeri.errors }}</div>{% endif %}
+          <div class="help-kur">TL ise <b>1.0000</b> bırakabilirsin. Tarih seçersen o günün kuru otomatik gelir.</div>
+          {% if form.kur_degeri.errors %}<div class="text-danger small mt-1">{{ form.kur_degeri.errors }}</div>{% endif %}
         </div>
 
         <div class="col-md-6">
           <label class="form-label fw-semibold">Harcama Tarihi</label>
           {{ form.tarih }}
-          {% if form.tarih.errors %}<div class="text-danger small">{{ form.tarih.errors }}</div>{% endif %}
+          {% if form.tarih.errors %}<div class="text-danger small mt-1">{{ form.tarih.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+          <div class="tl-preview d-flex justify-content-between align-items-center">
+            <div class="fw-semibold"><i class="fa-solid fa-calculator me-2"></i>TL Karşılığı (Önizleme)</div>
+            <div class="value" id="tlPreview">0,00 TL</div>
+          </div>
+          <div class="subtle mt-2">
+            Bu değer kayıt öncesi hesaplamadır. Kaydettiğinde raporlarda aynı TL karşılığı kullanılır.
+            <span class="ms-2" id="kurMeta"></span>
+          </div>
         </div>
 
         <div class="col-12">
           <label class="form-label fw-semibold">Dekont / Fiş</label>
           {{ form.dekont }}
-          {% if form.dekont.errors %}<div class="text-danger small">{{ form.dekont.errors }}</div>{% endif %}
+          {% if form.dekont.errors %}<div class="text-danger small mt-1">{{ form.dekont.errors }}</div>{% endif %}
         </div>
+
       </div>
 
       <div class="d-flex gap-2 mt-4">
         <button class="btn btn-success" type="submit">
           <i class="fa-solid fa-check me-1"></i> Kaydet
         </button>
-        <a class="btn btn-secondary" href="{% url 'gider_listesi' %}">
-          İptal
-        </a>
+        <a class="btn btn-secondary" href="{% url 'gider_listesi' %}">İptal</a>
       </div>
+
     </form>
   </div>
-
 </div>
 
 <script>
   document.addEventListener("DOMContentLoaded", function () {
-    // Bootstrap görünümü
+
+    // Bootstrap görünümü: form elemanlarına class ekle
     document.querySelectorAll("input, select, textarea").forEach(function(el){
       const type = (el.getAttribute("type") || "").toLowerCase();
       if (type === "checkbox" || type === "radio") return;
-      if (!el.classList.contains("form-control") && !el.classList.contains("form-select")) {
-        if (el.tagName.toLowerCase() === "select") el.classList.add("form-select");
-        else el.classList.add("form-control");
+
+      if (el.tagName.toLowerCase() === "select") {
+        if (!el.classList.contains("form-select")) el.classList.add("form-select");
+      } else {
+        if (!el.classList.contains("form-control")) el.classList.add("form-control");
       }
     });
 
+    // Elemanlar
     const paraBirimiEl = document.getElementById("id_para_birimi");
     const kurEl = document.getElementById("id_kur_degeri");
+    const tutarEl = document.getElementById("id_tutar");
     const tarihEl = document.getElementById("id_tarih");
+    const tlPreviewEl = document.getElementById("tlPreview");
+    const kurMetaEl = document.getElementById("kurMeta");
+
+    // Tarih input'u date yap (widget'ta zaten date ise dokunmaz)
+    if (tarihEl && (tarihEl.getAttribute("type") || "").toLowerCase() !== "date") {
+      try { tarihEl.setAttribute("type", "date"); } catch(e) {}
+    }
+
+    // Kur/tutar input iyileştirmeleri
+    if (kurEl) {
+      kurEl.setAttribute("step", "0.0001");
+      kurEl.setAttribute("inputmode", "decimal");
+    }
+    if (tutarEl) {
+      tutarEl.setAttribute("inputmode", "decimal");
+    }
 
     function setKurReadonly(isReadonly) {
       if (!kurEl) return;
@@ -105,20 +156,94 @@
       else kurEl.classList.remove("bg-light");
     }
 
+    // ✅ Nokta/virgül sorununu kökten çözen parser
+    // - "43.3026" => 43.3026
+    // - "1.234,56" => 1234.56
+    // - "1,234.56" => 1234.56
+    function parseSmartNumber(input) {
+      let s = (input ?? "").toString().trim();
+      if (!s) return 0;
+
+      s = s.replace(/\s+/g, "");
+      s = s.replace(/[^\d.,-]/g, "");
+
+      const hasDot = s.includes(".");
+      const hasComma = s.includes(",");
+
+      // Hem '.' hem ',' varsa: en sondaki ayraç ondalıktır
+      if (hasDot && hasComma) {
+        const lastDot = s.lastIndexOf(".");
+        const lastComma = s.lastIndexOf(",");
+        const decSep = lastDot > lastComma ? "." : ",";
+        const thouSep = decSep === "." ? "," : ".";
+
+        s = s.split(thouSep).join("");
+        if (decSep === ",") s = s.replace(",", ".");
+        return Number(s) || 0;
+      }
+
+      // Sadece ',' varsa
+      if (!hasDot && hasComma) {
+        const parts = s.split(",");
+        if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 4) {
+          s = parts[0].replace(/,/g, "") + "." + parts[1];
+        } else {
+          s = s.replace(/,/g, "");
+        }
+        return Number(s) || 0;
+      }
+
+      // Sadece '.' varsa
+      if (hasDot && !hasComma) {
+        const parts = s.split(".");
+        if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 6) {
+          // 43.3026 gibi ondalık
+          return Number(s) || 0;
+        } else {
+          // 1.234.567 gibi binlik
+          s = s.replace(/\./g, "");
+          return Number(s) || 0;
+        }
+      }
+
+      return Number(s) || 0;
+    }
+
+    function formatTL(n) {
+      try {
+        return n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " TL";
+      } catch {
+        return (Math.round(n * 100) / 100).toFixed(2) + " TL";
+      }
+    }
+
+    function updateTLPreview() {
+      if (!tlPreviewEl) return;
+
+      const tutar = parseSmartNumber(tutarEl ? tutarEl.value : "");
+      const kur = parseSmartNumber(kurEl ? kurEl.value : "");
+      const pb = (paraBirimiEl ? paraBirimiEl.value : "TRY").toUpperCase();
+
+      const tl = (pb === "TRY") ? tutar : (tutar * kur);
+      tlPreviewEl.textContent = formatTL(tl);
+    }
+
     async function refreshKur() {
       if (!paraBirimiEl || !kurEl) return;
 
       const pb = (paraBirimiEl.value || "").toUpperCase();
 
-      // TRY ise: 1.0000 ve kilit
+      // TRY: 1.0000 + kilit
       if (pb === "TRY") {
         kurEl.value = "1.0000";
         setKurReadonly(true);
+        if (kurMetaEl) kurMetaEl.textContent = "";
+        updateTLPreview();
         return;
       }
+
       setKurReadonly(false);
 
-      // Tarih varsa onu gönder (YYYY-MM-DD formatında olmalı)
       const dt = tarihEl ? (tarihEl.value || "").trim() : "";
 
       try {
@@ -129,20 +254,33 @@
 
         if (data.ok && data.rate) {
           kurEl.value = data.rate;
+
+          if (kurMetaEl) {
+            const src = data.source ? data.source : "TCMB";
+            const d = data.date ? (" (" + data.date + ")") : "";
+            kurMetaEl.textContent = "• Kur Kaynağı: " + src + d;
+          }
+
+          updateTLPreview();
         } else {
-          // Kur yoksa kullanıcı elle girebilsin
-          console.warn("Kur alınamadı:", data.message);
+          if (kurMetaEl) kurMetaEl.textContent = "• Kur alınamadı, manuel girebilirsin.";
+          updateTLPreview();
         }
       } catch (e) {
-        console.warn("Kur servisi hata:", e);
+        if (kurMetaEl) kurMetaEl.textContent = "• Kur servisine ulaşılamadı, manuel girebilirsin.";
+        updateTLPreview();
       }
     }
 
-    if (paraBirimiEl) paraBirimiEl.addEventListener("change", refreshKur);
-    if (tarihEl) tarihEl.addEventListener("change", refreshKur);
+    // Dinleyiciler
+    if (paraBirimiEl) paraBirimiEl.addEventListener("change", function(){ refreshKur(); updateTLPreview(); });
+    if (tarihEl) tarihEl.addEventListener("change", function(){ refreshKur(); });
+    if (tutarEl) tutarEl.addEventListener("input", updateTLPreview);
+    if (kurEl) kurEl.addEventListener("input", updateTLPreview);
 
-    // İlk açılışta da çek
+    // İlk yükte
     refreshKur();
+    updateTLPreview();
   });
 </script>
 {% endblock %}
