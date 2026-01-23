@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Giderler | AECO Fabrika Yönetim{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="mb-0">Giderler</h3>
+      <div class="text-muted small">Fiş / dekont ekleyerek gider kaydı oluşturabilirsin.</div>
+    </div>
+
+    <a class="btn btn-primary" href="{% url 'gider_ekle' %}">
+      <i class="fa-solid fa-plus me-1"></i> Yeni Gider Ekle
+    </a>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-lg-4">
+      <div class="table-card">
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="fw-bold text-muted">
+            <i class="fa-solid fa-coins me-2"></i> Toplam Gider (TL)
+          </div>
+          <div class="fs-4 fw-bold">{{ toplam_tl|floatformat:2 }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-bold">
+        <i class="fa-solid fa-chart-pie me-2"></i> Kategori Bazlı Özet
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Kategori</th>
+            <th class="text-end">Toplam (TL)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in kategori_ozet %}
+            <tr>
+              <td>
+                <span class="badge text-bg-light border">
+                  <i class="fa-solid fa-tag me-1"></i>{{ r.kategori__isim|default:"Diğer" }}
+                </span>
+              </td>
+              <td class="text-end fw-semibold">{{ r.toplam|floatformat:2 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="2" class="text-muted">Henüz gider yok.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-bold">
+        <i class="fa-solid fa-list-check me-2"></i> Gider Listesi
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>Tarih</th>
+            <th>Kategori</th>
+            <th>Açıklama</th>
+            <th class="text-end">Tutar</th>
+            <th class="text-end">Kur</th>
+            <th class="text-end">TL Karşılığı</th>
+            <th>Dekont</th>
+            <th class="text-end">İşlem</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in giderler %}
+            <tr>
+              <td>{{ g.tarih|date:"d.m.Y" }}</td>
+              <td class="fw-semibold">{{ g.kategori.isim }}</td>
+              <td>{{ g.aciklama }}</td>
+              <td class="text-end">{{ g.tutar|floatformat:2 }} {{ g.para_birimi }}</td>
+              <td class="text-end">{{ g.kur_degeri|floatformat:4 }}</td>
+              <td class="text-end fw-semibold">{{ g.tl|floatformat:2 }}</td>
+              <td>
+                {% if g.dekont %}
+                  <a href="{{ g.dekont.url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="fa-regular fa-file-lines me-1"></i> Aç
+                  </a>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary btn-action" href="{% url 'gider_duzenle' g.id %}"
+                   data-bs-toggle="tooltip" data-bs-placement="top" title="Düzenle">
+                  <i class="fa-regular fa-pen-to-square"></i>
+                </a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="8" class="text-muted">Henüz gider kaydı yok.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

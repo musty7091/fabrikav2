@@ -388,6 +388,7 @@ class SatinAlma(models.Model):
 
 class GiderKategorisi(models.Model):
     isim = models.CharField(max_length=100, verbose_name="Gider Kategorisi")
+    is_active = models.BooleanField(default=True, verbose_name="Aktif mi?")
 
     def __str__(self):
         return self.isim if self.isim else "Tanımsız Kategori"

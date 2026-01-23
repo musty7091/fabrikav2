@@ -20,6 +20,7 @@
     .bg-hizmet { background: #3498db; }
     .bg-tedarikci { background: #2ecc71; }
     .bg-kategori { background: #9b59b6; }
+    .bg-gider { background: #16a085; }  /* ✅ Gider Türleri */
     .title { font-weight: 700; font-size: 1.2rem; margin-bottom: 2px; }
     .desc { color: #888; font-size: 0.9rem; }
 </style>
@@ -29,38 +30,70 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold"><i class="fas fa-tools me-2 text-secondary"></i> Tanım Yönetimi</h2>
-        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary rounded-pill"><i class="fas fa-arrow-left me-1"></i> Anasayfaya Dön</a>
+        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary rounded-pill">
+            <i class="fas fa-arrow-left me-1"></i> Anasayfaya Dön
+        </a>
     </div>
 
     <div class="row">
         <div class="col-md-6">
             <a href="{% url 'stok_listesi' %}" class="menu-card">
                 <div class="icon-box bg-stok"><i class="fas fa-boxes"></i></div>
-                <div><div class="title">Stok Kartları</div><div class="desc">Malzeme tanımları ve birim ayarları.</div></div>
+                <div>
+                    <div class="title">Stok Kartları</div>
+                    <div class="desc">Malzeme tanımları ve birim ayarları.</div>
+                </div>
             </a>
         </div>
+
         <div class="col-md-6">
             <a href="{% url 'hizmet_listesi' %}" class="menu-card">
                 <div class="icon-box bg-hizmet"><i class="fas fa-handshake"></i></div>
-                <div><div class="title">Hizmet / İş Kalemleri</div><div class="desc">Taşeronluk ve hizmet tanım kartları.</div></div>
+                <div>
+                    <div class="title">Hizmet / İş Kalemleri</div>
+                    <div class="desc">Taşeronluk ve hizmet tanım kartları.</div>
+                </div>
             </a>
         </div>
+
         <div class="col-md-6">
             <a href="{% url 'tedarikci_listesi' %}" class="menu-card">
                 <div class="icon-box bg-tedarikci"><i class="fas fa-industry"></i></div>
-                <div><div class="title">Tedarikçi Portföyü</div><div class="desc">Firma bilgileri ve cari kart tanımları.</div></div>
+                <div>
+                    <div class="title">Tedarikçi Portföyü</div>
+                    <div class="desc">Firma bilgileri ve cari kart tanımları.</div>
+                </div>
             </a>
         </div>
+
         <div class="col-md-6">
             <a href="{% url 'depo_listesi' %}" class="menu-card">
                 <div class="icon-box bg-dark"><i class="fas fa-warehouse"></i></div>
-                <div><div class="title">Depo Tanımları</div><div class="desc">Fiziksel ve Sanal depo kartları.</div></div>
+                <div>
+                    <div class="title">Depo Tanımları</div>
+                    <div class="desc">Fiziksel ve Sanal depo kartları.</div>
+                </div>
             </a>
         </div>
+
         <div class="col-md-6">
             <a href="{% url 'kategori_listesi' %}" class="menu-card">
                 <div class="icon-box bg-kategori"><i class="fas fa-tags"></i></div>
-                <div><div class="title">İmalat Türleri</div><div class="desc">Proje kategorileri ve gider grupları.</div></div>
+                <div>
+                    <div class="title">İmalat Türleri</div>
+                    <div class="desc">Proje kategorileri ve gider grupları.</div>
+                </div>
+            </a>
+        </div>
+
+        <!-- ✅ Yeni: Gider Türleri -->
+        <div class="col-md-6">
+            <a href="{% url 'gider_tanim_listesi' %}" class="menu-card">
+                <div class="icon-box bg-gider"><i class="fas fa-receipt"></i></div>
+                <div>
+                    <div class="title">Gider Türleri</div>
+                    <div class="desc">Elektrik, nakliye, işçilik vb. gider kategorileri.</div>
+                </div>
             </a>
         </div>
     </div>

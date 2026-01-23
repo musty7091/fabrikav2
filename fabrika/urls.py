@@ -115,6 +115,15 @@ urlpatterns = [
     path('malzeme/duzenle/<int:pk>/', views.malzeme_duzenle, name='malzeme_duzenle'),
     path('malzeme/sil/<int:pk>/', views.malzeme_sil, name='malzeme_sil'),
 
+    path("giderler/", views.gider_listesi, name="gider_listesi"),
+    path("gider/ekle/", views.gider_ekle, name="gider_ekle"),
+    path("gider/<int:pk>/duzenle/", views.gider_duzenle, name="gider_duzenle"),
+    path("tanimlar/gider/", views.gider_tanim_listesi, name="gider_tanim_listesi"),
+    path("tanimlar/gider/ekle/", views.gider_tanim_ekle, name="gider_tanim_ekle"),
+    path("tanimlar/gider/<int:pk>/duzenle/", views.gider_tanim_duzenle, name="gider_tanim_duzenle"),
+    path("tanimlar/gider/<int:pk>/toggle/", views.gider_tanim_toggle_active, name="gider_tanim_toggle_active"),
+
+
     # 12. Yardımcılar
     path('islem-sonuc/<str:model_name>/<int:pk>/', views.islem_sonuc, name='islem_sonuc'),
     path('yazdir/<str:model_name>/<int:pk>/', views.belge_yazdir, name='belge_yazdir'),
@@ -122,7 +131,10 @@ urlpatterns = [
     # 13. Ekstreler (Özel View Modülünden)
     path("ekstre/stok/", stok_ekstresi, name="stok_ekstresi"),
     path("ekstre/cari/", cari_ekstresi, name="cari_ekstresi"),
+    path("api/kur/", views.kur_getir, name="kur_getir"),
 
     # 14. Oturum
     path('cikis/', views.cikis_yap, name='cikis_yap'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+    

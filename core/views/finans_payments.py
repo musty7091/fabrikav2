@@ -1,6 +1,5 @@
 from decimal import Decimal, InvalidOperation
 from datetime import date
-
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -11,7 +10,7 @@ from django.db import transaction
 
 # Modeller ve Formlar
 from core.models import (
-    SatinAlma, Hakedis, Odeme, Tedarikci, Fatura, GiderKategorisi
+    SatinAlma, Hakedis, Odeme, Tedarikci, Fatura, GiderKategorisi, IsKalemi, Teklif, Malzeme, Harcama
 )
 
 # OdemeDagitim opsiyonel (migration yapılmadıysa dosya patlamasın)
@@ -621,7 +620,152 @@ def avans_mahsup(request, tedarikci_id):
 
 @login_required
 def finans_dashboard(request):
-    return redirect('odeme_dashboard')
+    """
+    Finansal Özet (Gerçekleşen)
+    - Tahmin yok.
+    - Faturalaşan + Hakediş girilen (ve opsiyonel Harcama) üzerinden toplam maliyet.
+    """
+    from django.db.models import Sum
+    from decimal import Decimal
+    import json
+
+    # 1) Gerçekleşen faturalar (KDV dahil toplam)
+    fatura_toplam = (
+        Fatura.objects.aggregate(s=Sum("genel_toplam"))["s"]
+        or Decimal("0.00")
+    )
+    fatura_odenen = (
+        Fatura.objects.aggregate(s=Sum("odenen_tutar"))["s"]
+        or Decimal("0.00")
+    )
+    fatura_kalan = (fatura_toplam - fatura_odenen)
+
+    # 2) Girilmiş hakedişler (net ödenecek)
+    hakedis_toplam = (
+        Hakedis.objects.aggregate(s=Sum("odenecek_net_tutar"))["s"]
+        or Decimal("0.00")
+    )
+    hakedis_odenen = (
+        Hakedis.objects.aggregate(s=Sum("fiili_odenen_tutar"))["s"]
+        or Decimal("0.00")
+    )
+    hakedis_kalan = (hakedis_toplam - hakedis_odenen)
+
+    # 3) Opsiyonel: Harcamalar (fiş/gider) — istersen dahil ederiz.
+    # Şimdilik template’te kart var diye 0 bırakıyorum (sen istemiyorsun).
+    harcama_tutari = Decimal("0.00")
+
+    # 4) "İmalat" = Fatura + Hakediş (senin tanımına uygun gerçekleşen maliyet)
+    imalat_maliyeti = fatura_toplam + hakedis_toplam
+
+    # 5) Genel proje maliyeti (gerçekleşen)
+    genel_toplam = imalat_maliyeti + harcama_tutari
+
+    # 6) Kalan borç (fatura + hakedişten kalan)
+    kalan_borc = fatura_kalan + hakedis_kalan
+
+    # 7) İlerleme kartı (Satınalma ilerleme): kaç iş kalemi "onaylandı" gibi
+    toplam_kalem = IsKalemi.objects.count()
+    dolu_kalem = (
+        Teklif.objects
+        .filter(durum='onaylandi', is_kalemi__isnull=False)
+        .values('is_kalemi')
+        .distinct()
+        .count()
+    )
+    oran = 0
+    if toplam_kalem > 0:
+        oran = int(round((dolu_kalem / toplam_kalem) * 100))
+
+    # 8) Grafik verileri (imalat dağılımı = kategori bazlı fatura+hakediş)
+    # 8a) Hakediş -> IsKalemi.Kategori
+    h_qs = (
+        Hakedis.objects
+        .select_related("satinalma__teklif__is_kalemi__kategori")
+        .values("satinalma__teklif__is_kalemi__kategori__isim")
+        .annotate(t=Sum("odenecek_net_tutar"))
+        .order_by("-t")
+    )
+    h_map = {}
+    for row in h_qs:
+        key = row["satinalma__teklif__is_kalemi__kategori__isim"] or "Diğer"
+        h_map[key] = (h_map.get(key, Decimal("0.00")) + (row["t"] or Decimal("0.00")))
+
+    # 8b) Fatura -> bağlı sipariş -> teklif -> (is_kalemi.kategori veya malzeme.kategori)
+    f_qs = (
+        Fatura.objects
+        .select_related("satinalma__teklif__is_kalemi__kategori", "satinalma__teklif__malzeme")
+    )
+
+    # Malzeme kategori label map (choices)
+    malzeme_choice_map = dict(Malzeme.KATEGORILER)
+
+    f_map = {}
+    for fat in f_qs:
+        key = None
+        try:
+            teklif = fat.satinalma.teklif if fat.satinalma_id else None
+            if teklif and teklif.is_kalemi_id and teklif.is_kalemi and teklif.is_kalemi.kategori_id:
+                key = teklif.is_kalemi.kategori.isim
+            elif teklif and teklif.malzeme_id and teklif.malzeme:
+                key = malzeme_choice_map.get(teklif.malzeme.kategori, "Malzeme")
+        except Exception:
+            key = None
+
+        if not key:
+            key = "Diğer"
+
+        f_map[key] = (f_map.get(key, Decimal("0.00")) + (fat.genel_toplam or Decimal("0.00")))
+
+    # Birleştir (hakediş + fatura)
+    imalat_map = {}
+    for k, v in f_map.items():
+        imalat_map[k] = imalat_map.get(k, Decimal("0.00")) + v
+    for k, v in h_map.items():
+        imalat_map[k] = imalat_map.get(k, Decimal("0.00")) + v
+
+    imalat_sorted = sorted(imalat_map.items(), key=lambda x: x[1], reverse=True)[:12]
+    imalat_labels = [k for k, _ in imalat_sorted]
+    imalat_data = [float(v) for _, v in imalat_sorted]
+
+    # Gider grafiği template’te var; biz 0’larla besleyelim (bozulmasın)
+    gider_labels = []
+    gider_data = []
+
+    # 9) Döviz kartları için kur çek (template bekliyor)
+    guncel_kurlar = tcmb_kur_getir()
+    usd = to_decimal(guncel_kurlar.get("USD", 0) or 0)
+    eur = to_decimal(guncel_kurlar.get("EUR", 0) or 0)
+
+    def tl_to_fx(tl_value: Decimal):
+        tl_value = to_decimal(tl_value)
+        return {
+            "usd": float(tl_value / usd) if usd and usd > 0 else 0,
+            "eur": float(tl_value / eur) if eur and eur > 0 else 0,
+        }
+
+    context = {
+        "genel_toplam": genel_toplam,
+        "imalat_maliyeti": imalat_maliyeti,
+        "harcama_tutari": harcama_tutari,
+        "kalan_borc": kalan_borc,
+
+        "doviz_genel": tl_to_fx(genel_toplam),
+        "doviz_imalat": tl_to_fx(imalat_maliyeti),
+        "doviz_harcama": tl_to_fx(harcama_tutari),
+        "doviz_borc": tl_to_fx(kalan_borc),
+
+        "oran": oran,
+        "toplam_kalem": toplam_kalem,
+        "dolu_kalem": dolu_kalem,
+
+        "imalat_labels": json.dumps(imalat_labels, ensure_ascii=False),
+        "imalat_data": json.dumps(imalat_data),
+        "gider_labels": json.dumps(gider_labels, ensure_ascii=False),
+        "gider_data": json.dumps(gider_data),
+    }
+
+    return render(request, "finans_dashboard.html", context)
 
 
 @login_required

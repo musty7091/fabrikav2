@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}{% if edit_mode %}Gider Düzenle{% else %}Yeni Gider Ekle{% endif %} | AECO Fabrika Yönetim{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">{% if edit_mode %}Gider Düzenle{% else %}Yeni Gider Ekle{% endif %}</h3>
+    <a class="btn btn-outline-secondary" href="{% url 'gider_listesi' %}">
+      <i class="fa-solid fa-arrow-left me-1"></i> Giderler
+    </a>
+  </div>
+
+  <div class="form-container">
+    <div class="form-title">
+      <i class="fa-solid fa-receipt me-2"></i>
+      {% if edit_mode %}Kayıt Güncelle{% else %}Yeni Kayıt{% endif %}
+    </div>
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+      {% endif %}
+
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label fw-semibold">Gider Türü</label>
+          {{ form.kategori }}
+          {% if form.kategori.errors %}<div class="text-danger small">{{ form.kategori.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+          <label class="form-label fw-semibold">Harcama Açıklaması</label>
+          {{ form.aciklama }}
+          {% if form.aciklama.errors %}<div class="text-danger small">{{ form.aciklama.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Tutar</label>
+          {{ form.tutar }}
+          {% if form.tutar.errors %}<div class="text-danger small">{{ form.tutar.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Para Birimi</label>
+          {{ form.para_birimi }}
+          {% if form.para_birimi.errors %}<div class="text-danger small">{{ form.para_birimi.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">İşlem Kuru</label>
+          {{ form.kur_degeri }}
+          <div class="form-text">TL ise 1.0000 bırakabilirsin.</div>
+          {% if form.kur_degeri.errors %}<div class="text-danger small">{{ form.kur_degeri.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Harcama Tarihi</label>
+          {{ form.tarih }}
+          {% if form.tarih.errors %}<div class="text-danger small">{{ form.tarih.errors }}</div>{% endif %}
+        </div>
+
+        <div class="col-12">
+          <label class="form-label fw-semibold">Dekont / Fiş</label>
+          {{ form.dekont }}
+          {% if form.dekont.errors %}<div class="text-danger small">{{ form.dekont.errors }}</div>{% endif %}
+        </div>
+      </div>
+
+      <div class="d-flex gap-2 mt-4">
+        <button class="btn btn-success" type="submit">
+          <i class="fa-solid fa-check me-1"></i> Kaydet
+        </button>
+        <a class="btn btn-secondary" href="{% url 'gider_listesi' %}">
+          İptal
+        </a>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    // Bootstrap görünümü
+    document.querySelectorAll("input, select, textarea").forEach(function(el){
+      const type = (el.getAttribute("type") || "").toLowerCase();
+      if (type === "checkbox" || type === "radio") return;
+      if (!el.classList.contains("form-control") && !el.classList.contains("form-select")) {
+        if (el.tagName.toLowerCase() === "select") el.classList.add("form-select");
+        else el.classList.add("form-control");
+      }
+    });
+
+    const paraBirimiEl = document.getElementById("id_para_birimi");
+    const kurEl = document.getElementById("id_kur_degeri");
+    const tarihEl = document.getElementById("id_tarih");
+
+    function setKurReadonly(isReadonly) {
+      if (!kurEl) return;
+      kurEl.readOnly = isReadonly;
+      if (isReadonly) kurEl.classList.add("bg-light");
+      else kurEl.classList.remove("bg-light");
+    }
+
+    async function refreshKur() {
+      if (!paraBirimiEl || !kurEl) return;
+
+      const pb = (paraBirimiEl.value || "").toUpperCase();
+
+      // TRY ise: 1.0000 ve kilit
+      if (pb === "TRY") {
+        kurEl.value = "1.0000";
+        setKurReadonly(true);
+        return;
+      }
+      setKurReadonly(false);
+
+      // Tarih varsa onu gönder (YYYY-MM-DD formatında olmalı)
+      const dt = tarihEl ? (tarihEl.value || "").trim() : "";
+
+      try {
+        const base = "{% url 'kur_getir' %}";
+        const url = base + "?pb=" + encodeURIComponent(pb) + (dt ? "&date=" + encodeURIComponent(dt) : "");
+        const resp = await fetch(url, {headers: {"X-Requested-With": "XMLHttpRequest"}});
+        const data = await resp.json();
+
+        if (data.ok && data.rate) {
+          kurEl.value = data.rate;
+        } else {
+          // Kur yoksa kullanıcı elle girebilsin
+          console.warn("Kur alınamadı:", data.message);
+        }
+      } catch (e) {
+        console.warn("Kur servisi hata:", e);
+      }
+    }
+
+    if (paraBirimiEl) paraBirimiEl.addEventListener("change", refreshKur);
+    if (tarihEl) tarihEl.addEventListener("change", refreshKur);
+
+    // İlk açılışta da çek
+    refreshKur();
+  });
+</script>
+{% endblock %}

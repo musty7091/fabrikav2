@@ -1,12 +1,9 @@
-# core/views/__init__.py
 
-# Genel yardımcılar (cikis_yap BURADAN gelmeli)
 from .genel import (
     dashboard, erisim_engellendi, islem_sonuc, 
     belge_yazdir, cikis_yap
 )
 
-# Modüller
 from .satin_alma import (
     siparis_listesi, siparis_detay, mal_kabul, fatura_sil
 )
@@ -32,15 +29,22 @@ from .stok_depo import (
     stok_hareketleri, get_depo_stok, stok_rontgen, envanter_raporu
 )
 
-# Finans Ödeme ve Faturalar (urls.py'de direkt import edildiği için buraya zorunlu değil
-# ama views.get_tedarikci_bakiye gibi kullanımlar için ekliyoruz)
+
 try:
     from .finans_payments import get_tedarikci_bakiye
 except ImportError:
     pass
 
-# Ekstreler
 from .ekstre import stok_ekstresi, cari_ekstresi
 
-# Güvenlik (yetki_kontrol BURADA)
 from .guvenlik import yetki_kontrol
+from .giderler import gider_listesi, gider_ekle, gider_duzenle
+
+from .gider_tanimlari import (
+    gider_tanim_listesi,
+    gider_tanim_ekle,
+    gider_tanim_duzenle,
+    gider_tanim_toggle_active,
+)
+
+from .kur_api import kur_getir

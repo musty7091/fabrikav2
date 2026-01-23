@@ -4,7 +4,7 @@ from django.forms import inlineformset_factory
 from decimal import Decimal, InvalidOperation
 
 from core.models import (
-    Teklif, Fatura, FaturaKalem, Hakedis, Odeme, 
+    Teklif, Fatura, FaturaKalem, Hakedis, Odeme, Harcama, 
     KDV_ORANLARI, Depo
 )
 
@@ -204,3 +204,4 @@ class OdemeForm(forms.ModelForm):
             tutar = tutar.replace(',', '.')
             
         return to_decimal(tutar)
+    

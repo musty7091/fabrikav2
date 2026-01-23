@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Gider Türleri | AECO Fabrika Yönetim{% endblock %}
+{% block content %}
+
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="mb-0">Gider Türleri (Tanımlar)</h3>
+      <div class="text-muted small">Silmek yerine pasif alıyoruz.</div>
+    </div>
+
+    <a class="btn btn-primary" href="{% url 'gider_tanim_ekle' %}">
+      <i class="fa-solid fa-plus me-1"></i> Yeni Gider Türü
+    </a>
+  </div>
+
+  <div class="d-flex gap-2 mb-3">
+    <a class="btn {% if filtre == 'aktif' %}btn-dark{% else %}btn-outline-dark{% endif %}"
+       href="{% url 'gider_tanim_listesi' %}?durum=aktif">Aktif</a>
+
+    <a class="btn {% if filtre == 'pasif' %}btn-dark{% else %}btn-outline-dark{% endif %}"
+       href="{% url 'gider_tanim_listesi' %}?durum=pasif">Pasif</a>
+
+    <a class="btn {% if filtre == 'hepsi' %}btn-dark{% else %}btn-outline-dark{% endif %}"
+       href="{% url 'gider_tanim_listesi' %}?durum=hepsi">Hepsi</a>
+  </div>
+
+  <div class="table-card">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Gider Türü</th>
+            <th>Durum</th>
+            <th class="text-end">İşlemler</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in items %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td class="fw-semibold">{{ x.isim }}</td>
+            <td>
+              {% if x.is_active %}
+                <span class="badge bg-success">Aktif</span>
+              {% else %}
+                <span class="badge bg-secondary">Pasif</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary btn-action"
+                 href="{% url 'gider_tanim_duzenle' x.id %}"
+                 data-bs-toggle="tooltip" title="Düzenle">
+                <i class="fa-regular fa-pen-to-square"></i>
+              </a>
+
+              <a class="btn btn-sm btn-outline-warning btn-action"
+                 href="{% url 'gider_tanim_toggle_active' x.id %}"
+                 data-bs-toggle="tooltip" title="Aktif/Pasif">
+                <i class="fa-solid fa-ban"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4" class="text-muted">Henüz gider türü yok.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

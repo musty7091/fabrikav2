@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Gider Türü | AECO Fabrika Yönetim{% endblock %}
+{% block content %}
+
+<div class="container py-4">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">
+      {% if mode == "edit" %}Gider Türü Düzenle{% else %}Yeni Gider Türü{% endif %}
+    </h3>
+    <a class="btn btn-outline-secondary" href="{% url 'gider_tanim_listesi' %}">
+      <i class="fa-solid fa-arrow-left me-1"></i> Gider Türleri
+    </a>
+  </div>
+
+  <div class="form-container">
+    <div class="form-title">
+      <i class="fa-solid fa-tag me-2"></i>
+      {% if mode == "edit" %}Düzenleme{% else %}Yeni Kayıt{% endif %}
+    </div>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <label class="form-label fw-semibold">Gider Türü Adı</label>
+      <input class="form-control" type="text" name="isim"
+             value="{% if obj %}{{ obj.isim }}{% endif %}"
+             placeholder="Örn: Ulaşım, Konaklama" required>
+
+      <div class="d-flex gap-2 mt-4">
+        <button class="btn btn-success" type="submit">
+          <i class="fa-solid fa-check me-1"></i> Kaydet
+        </button>
+        <a class="btn btn-secondary" href="{% url 'gider_tanim_listesi' %}">İptal</a>
+      </div>
+    </form>
+  </div>
+
+</div>
+
+{% endblock %}
