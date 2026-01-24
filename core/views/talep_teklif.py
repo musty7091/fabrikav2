@@ -115,18 +115,46 @@ def teklif_ekle(request):
                     pass
 
             # Kur: teklif aşamasında yardımcı (asıl kilit onay anında)
+                        # Kur: teklif kaydında DOĞRU kur_degeri mutlaka yazılmalı.
+            # Çünkü PaymentService onay anında önce teklif.kur_degeri'ni "Manual/Existing" kabul ediyor.
             try:
                 pb = (teklif.para_birimi or "TRY").upper().strip()
                 if pb in ("TL", "", None):
                     pb = "TRY"
+
                 if pb == "TRY":
                     teklif.kur_degeri = Decimal("1.0000")
                 else:
-                    # Kullanıcı formda bir kur girdiyse onu bozmuyoruz
-                    if not teklif.kur_degeri or Decimal(str(teklif.kur_degeri)) <= 0:
-                        teklif.kur_degeri = guncel_kurlar.get(pb, Decimal('1.0'))
+                    # TCMB kurunu al (teklif giriş ekranında zaten bunu gösteriyorsun)
+                    kur = guncel_kurlar.get(pb)
+
+                    # Kur yoksa ONAY SÜRECİNİ BOZAR; burada hata verelim.
+                    if kur is None:
+                        messages.error(request, f"❌ {pb} için TCMB kuru bulunamadı. Lütfen tekrar deneyin.")
+                        return render(request, 'teklif_ekle.html', {
+                            'form': form,
+                            'kurlar_json': kurlar_json,
+                            'guncel_kurlar': guncel_kurlar,
+                            'secili_talep': secili_talep,
+                            'malzeme_kdv_json': json.dumps(malzeme_kdv_map),
+                            'hizmet_kdv_json': json.dumps(hizmet_kdv_map),
+                        })
+
+                    teklif.kur_degeri = Decimal(str(kur))
             except Exception:
-                teklif.kur_degeri = teklif.kur_degeri or Decimal("1.0000")
+                # Güvenli fallback: TRY harici para biriminde 1'e düşmek yerine hata vermek daha doğru.
+                pb = (teklif.para_birimi or "TRY").upper().strip()
+                if pb not in ("TRY", "TL", "", None):
+                    messages.error(request, "❌ Kur hesaplanamadı. Lütfen tekrar deneyin.")
+                    return render(request, 'teklif_ekle.html', {
+                        'form': form,
+                        'kurlar_json': kurlar_json,
+                        'guncel_kurlar': guncel_kurlar,
+                        'secili_talep': secili_talep,
+                        'malzeme_kdv_json': json.dumps(malzeme_kdv_map),
+                        'hizmet_kdv_json': json.dumps(hizmet_kdv_map),
+                    })
+                teklif.kur_degeri = Decimal("1.0000")
 
             teklif.save()
             messages.success(request, "✅ Teklif başarıyla kaydedildi.")

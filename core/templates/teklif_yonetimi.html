@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% load humanize %}
+{% load l10n %}
 
 {% block title %}Teklif Yönetimi{% endblock %}
 
@@ -97,9 +99,21 @@
                         </div>
                         <div class="text-end">
                             <small class="text-muted d-block" style="font-size: 0.7rem;">TOPLAM</small>
-                            <span class="fw-bold text-success fs-5">
-                                {{ teklif.toplam_fiyat_tl }} ₺
-                            </span>
+                            {% if teklif.locked_total_try and teklif.locked_total_try > 0 %}
+                                <span class="fw-bold text-success fs-5">
+                                    {{ teklif.locked_total_try|floatformat:2|intcomma }} ₺
+                                </span>
+                                <small class="text-muted d-block" style="font-size: 0.7rem;">
+                                    <i class="fas fa-lock me-1"></i> Kilitli Kur:
+                                    {% if teklif.locked_rate %}{{ teklif.locked_rate|floatformat:4 }}{% else %}-{% endif %}
+                                    {% if teklif.locked_rate_date %} ({{ teklif.locked_rate_date|date:"d.m.Y" }}){% endif %}
+                                    {% if teklif.locked_rate_source %} • {{ teklif.locked_rate_source }}{% endif %}
+                                </small>
+                            {% else %}
+                                <span class="fw-bold text-success fs-5">
+                                    {{ teklif.toplam_fiyat_tl|floatformat:2|intcomma }} ₺
+                                </span>
+                            {% endif %}
                         </div>
                     </div>
                 </div>

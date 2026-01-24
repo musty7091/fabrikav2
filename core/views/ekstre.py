@@ -53,45 +53,39 @@ def cari_ekstresi(request):
         # 1) FATURALAR (TL'ye çevrilmiş borç)
         # --------------------
         for fat in faturalar:
-            pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-
-            genel_toplam = to_decimal(getattr(fat, "genel_toplam", 0))
-            kur = to_decimal(kur) if kur else Decimal("1.0")
-
-            # 🔴 KRİTİK: Para birimi bulunamadıysa (pb TRY döner) ama fatura aslında döviz olabilir.
-            # Bu durumda sadece "faturaya bağlı" ödemelerden kur türetiyoruz.
-            # (Yanlış eşleştirme riskini azaltmak için tedarikçi toplamından değil, faturaya bağlı olandan bakıyoruz.)
-            if pb == "TRY":
-                odenen_tl = (
-                    Odeme.objects.filter(fatura=fat)
-                    .aggregate(toplam=Sum("tutar"))["toplam"]
-                    or Decimal("0")
-                )
-                odenen_tl = to_decimal(odenen_tl)
-
-                # genel_toplam 0 ise bölme yapma
-                if genel_toplam > Decimal("0.0001"):
-                    # Ödeme, fatura tutarından bariz büyükse bu fatura dövizdir → kur türet
-                    if odenen_tl > genel_toplam * Decimal("1.50"):
-                        kur = odenen_tl / genel_toplam
-                        pb = "USD"  # para birimi tespit edilemiyorsa en azından döviz olduğunu belirtelim
-
-            tl_borc = genel_toplam * kur
+            # ✅ KRİTİK: Fatura.genel_toplam zaten TL tutulur => ASLA kur uygulanmaz
+            tl_borc = to_decimal(getattr(fat, "genel_toplam", 0)).quantize(Decimal("0.01"))
 
             aciklama = f"Fatura: {fat.aciklama or ''}".strip()
 
-            # Döviz bilgisi badge
-            if pb != "TRY":
-                aciklama += (
-                    f"<br><span class='badge bg-light text-dark border'>"
-                    f"Orj: {genel_toplam:,.2f} {pb} | Kur: {kur}</span>"
-                )
+            # Bilgi amaçlı: bağlı teklif dövizliyse TL'den geriye doğru "orj" göster (TL / kur)
+            try:
+                teklif = fat.satinalma.teklif if getattr(fat, "satinalma_id", None) else None
+                if teklif:
+                    pb = (getattr(teklif, "para_birimi", "TRY") or "TRY").upper().strip()
+                    if pb in ("TL", "", None):
+                        pb = "TRY"
+
+                    # öncelik: locked_rate, sonra kur_degeri
+                    kur = to_decimal(
+                        getattr(teklif, "locked_rate", None) or getattr(teklif, "kur_degeri", None) or 0,
+                        precision=6
+                    )
+
+                    if pb != "TRY" and kur and kur > 0:
+                        orj_hint = (to_decimal(tl_borc) / to_decimal(kur)).quantize(Decimal("0.01"))
+                        aciklama += (
+                            f"<br><span class='badge bg-light text-dark border'>"
+                            f"Orj: {orj_hint:,.2f} {pb} | Kur: {kur}</span>"
+                        )
+            except Exception:
+                pass
 
             hareketler.append(
                 {
                     "tarih": fat.tarih,
                     "aciklama": aciklama,
-                    "borc": tl_borc,
+                    "borc": tl_borc,          # ✅ TL
                     "alacak": Decimal("0"),
                     "tip": "Fatura",
                 }

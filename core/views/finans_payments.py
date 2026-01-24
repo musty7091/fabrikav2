@@ -239,11 +239,20 @@ def _recalc_invoice_odenen_tutar_orj(fat: Fatura, guncel_kurlar: dict):
 
 
 def _invoice_total_tl(fat: Fatura, guncel_kurlar: dict) -> Decimal:
-    pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-    return (to_decimal(fat.genel_toplam) * to_decimal(kur)).quantize(Decimal("0.01"))
+    """
+    KRİTİK KURAL:
+    - Fatura.genel_toplam sistemimizde TL tutulur.
+    - Bu nedenle ASLA tekrar kur uygulanmaz.
+    - Döviz bilgisi sadece "bilgi amaçlı" gösterimde kullanılabilir.
+    """
+    return to_decimal(fat.genel_toplam).quantize(Decimal("0.01"))
 
 
 def _invoice_remaining_tl(fat: Fatura, guncel_kurlar: dict) -> Decimal:
+    """
+    Kalan TL = toplam TL - ödenen TL.
+    Kur uygulanmaz.
+    """
     total_tl = _invoice_total_tl(fat, guncel_kurlar)
     paid_tl = _paid_tl_for_invoice(fat)
     return max(to_decimal(total_tl) - to_decimal(paid_tl), Decimal("0.00"))
@@ -750,21 +759,47 @@ def finans_dashboard(request):
 
     return render(request, "finans_dashboard.html", context)
 
+import logging
+logger = logging.getLogger(__name__)
 
 @login_required
 def cari_ekstre(request, tedarikci_id):
+    logger.error("### DEBUG cari_ekstre -> %s", __file__)
     tedarikci = get_object_or_404(Tedarikci, id=tedarikci_id)
     hareketler = []
     guncel_kurlar = tcmb_kur_getir()
 
     # FATURALAR (TL borç)
+    # FATURALAR (TL borç)  ✅ TEK KAYNAK: TEKLİF locked_total_try
     for fat in Fatura.objects.filter(tedarikci=tedarikci):
-        pb, kur = get_smart_exchange_rate(fat, guncel_kurlar)
-        tl_borc = _invoice_total_tl(fat, guncel_kurlar)
-
+        tl_borc = None
         aciklama = f"Fatura #{fat.fatura_no}"
-        if pb != "TRY":
-            aciklama += f"<br><span class='badge bg-light text-dark border'>Orj: {to_decimal(fat.genel_toplam):,.2f} {pb} | Kur: {kur}</span>"
+
+        # 1) Satınalma/teklif varsa: kilitli TL'yi kullan
+        try:
+            teklif = fat.satinalma.teklif if fat.satinalma_id else None
+            if teklif:
+                _net, _vat, gross = PaymentService.teklif_try_tutarlarini_getir(teklif)
+                tl_borc = gross
+
+                # Bilgi amaçlı: TL'den geriye doğru orj göster (çarpma yok)
+                pb = (getattr(teklif, "para_birimi", None) or "TRY").upper().strip()
+                if pb == "TL":
+                    pb = "TRY"
+                kur = to_decimal(getattr(teklif, "locked_rate", None) or getattr(teklif, "kur_degeri", None) or 0)
+
+                if pb != "TRY" and kur and kur > 0:
+                    orj_hint = (to_decimal(tl_borc) / to_decimal(kur)).quantize(Decimal("0.01"))
+                    aciklama += (
+                        f"<br><span class='badge bg-light text-dark border'>"
+                        f"Bilgi: ~{orj_hint:,.2f} {pb} | Kur: {kur}</span>"
+                    )
+        except Exception:
+            tl_borc = None
+
+        # 2) Fallback (çok nadir): teklif yoksa, fatura genel toplamını TL kabul et
+        if tl_borc is None:
+            tl_borc = to_decimal(getattr(fat, "genel_toplam", 0)).quantize(Decimal("0.01"))
 
         hareketler.append({
             "tarih": fat.tarih,

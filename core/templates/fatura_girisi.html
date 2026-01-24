@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% load humanize %}
+{% load l10n %}
 {% block title %}Sipariş Faturası Girişi{% endblock %}
 
 {% block content %}
@@ -83,8 +85,19 @@
                                         <td>%{{ siparis.teklif.kdv_orani }}</td>
                                     </tr>
                                     <tr class="border-top">
-                                        <td class="pt-2"><strong>Tahmini Tutar:</strong></td>
-                                        <td class="pt-2 text-success fw-bold">{{ siparis.teklif.toplam_fiyat_tl }} TL</td>
+                                        <td class="pt-2"><strong>{% if siparis.teklif.locked_total_try and siparis.teklif.locked_total_try > 0 %}Kilitli Tutar:{% else %}Tahmini Tutar:{% endif %}</strong></td>
+                                        <td class="pt-2 text-success fw-bold">
+                                            {% if siparis.teklif.locked_total_try and siparis.teklif.locked_total_try > 0 %}
+                                                {{ siparis.teklif.locked_total_try|floatformat:2|intcomma }} ₺
+                                                <div class="small text-muted mt-1">
+                                                    <i class="fas fa-lock me-1"></i> Kilitli Kur:
+                                                    {% if siparis.teklif.locked_rate %}{{ siparis.teklif.locked_rate|floatformat:4 }}{% else %}-{% endif %}
+                                                    {% if siparis.teklif.locked_rate_date %} ({{ siparis.teklif.locked_rate_date|date:"d.m.Y" }}){% endif %}
+                                                    {% if siparis.teklif.locked_rate_source %} • {{ siparis.teklif.locked_rate_source }}{% endif %}
+                                                </div>
+                                            {% else %}
+                                                {{ siparis.teklif.toplam_fiyat_tl|floatformat:2|intcomma }} ₺
+                                            {% endif %}</td>
                                     </tr>
                                 </tbody>
                             </table>
