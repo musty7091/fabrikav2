@@ -94,37 +94,42 @@ def cari_ekstresi(request):
         # --------------------
         # 2) HAKEDİŞLER (TL'ye çevrilmiş borç)
         # --------------------
+        # HAKEDİŞLER (TL borç) - KRİTİK: Hakediş TL tutulur => ASLA kur uygulanmaz
         for hk in hakedisler:
-            pb, kur = get_smart_exchange_rate(hk, guncel_kurlar)
-            pb = "TRY" if pb in ["TL", "TRY"] else pb
-            kur = to_decimal(kur) if kur else Decimal("1.0")
+            hk_tutar = to_decimal(getattr(hk, "odenecek_net_tutar", 0)).quantize(Decimal("0.01"))
+            tl_borc = hk_tutar  # ✅ TL
 
-            hk_tutar = to_decimal(getattr(hk, "odenecek_net_tutar", 0))
-            tl_borc = hk_tutar * kur
+            aciklama = f"Hakediş: {getattr(hk, 'aciklama', '') or ''}".strip()
 
-            is_adi = "İşçilik"
+            # Bilgi amaçlı: teklif dövizliyse TL'den orj'a geri hesap (TL / kur)
             try:
-                if hk.satinalma and hk.satinalma.teklif and hk.satinalma.teklif.is_kalemi:
-                    is_adi = hk.satinalma.teklif.is_kalemi.isim
+                teklif = hk.satinalma.teklif if getattr(hk, "satinalma_id", None) else None
+                if teklif:
+                    pb = (getattr(teklif, "para_birimi", "TRY") or "TRY").upper().strip()
+                    if pb in ("TL", "", None):
+                        pb = "TRY"
+
+                    kur = to_decimal(
+                        getattr(teklif, "locked_rate", None) or getattr(teklif, "kur_degeri", None) or 0,
+                        precision=6
+                    )
+
+                    if pb != "TRY" and kur and kur > 0:
+                        orj_hint = (to_decimal(tl_borc) / to_decimal(kur)).quantize(Decimal("0.01"))
+                        aciklama += (
+                            f"<br><span class='badge bg-light text-dark border'>"
+                            f"Orj: {orj_hint:,.2f} {pb} | Kur: {kur}</span>"
+                        )
             except Exception:
                 pass
 
-            aciklama = f"Hakediş ({is_adi})"
-            if pb != "TRY":
-                aciklama += (
-                    f"<br><span class='badge bg-light text-dark border'>"
-                    f"Orj: {hk_tutar:,.2f} {pb} | Kur: {kur}</span>"
-                )
-
-            hareketler.append(
-                {
-                    "tarih": hk.tarih,
-                    "aciklama": aciklama,
-                    "borc": tl_borc,
-                    "alacak": Decimal("0"),
-                    "tip": "Hakediş",
-                }
-            )
+            hareketler.append({
+                "tarih": hk.tarih,
+                "aciklama": aciklama,
+                "borc": tl_borc,            # ✅ TL
+                "alacak": Decimal("0"),
+                "tip": "Hakedis",
+            })
 
         # --------------------
         # 3) ÖDEMELER (TL alacak)
