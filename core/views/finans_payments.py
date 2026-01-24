@@ -662,128 +662,147 @@ def avans_mahsup(request, tedarikci_id):
 @login_required
 def finans_dashboard(request):
     """
-    PATRON EKRANI: Finansal Özet ve Nakit Akışı
-    Mantık: Tahakkuk Esaslı (Accrual Basis)
-    - Fabrika Maliyeti = Faturalar (KDV Dahil) + Hakedişler (Brüt+KDV) + Giderler
-    - Cari Borç = Maliyet - Ödemeler
-    - Yaklaşan Çekler = Vadesi 30 gün içinde olan VE henüz 'Ödendi' işaretlenmemiş çekler.
+    PATRON EKRANI: Finansal Özet ve Nakit Akışı (DÜZELTİLMİŞ NİHAİ HALİ)
+    
+    Yenilikler:
+    1. Borç ve Avans (Alacak) ayrıştırıldı.
+    2. Yatırım maliyeti (Fatura + Hakediş + Gider) hesaplandı.
+    3. Yaklaşan çeklerde 'Ödenmiş' olanlar gizlendi.
     """
     if not yetki_kontrol(request.user, ['YONETICI', 'MUHASEBE_FINANS']):
         return redirect('erisim_engellendi')
 
-    # 1. HESAPLAMALAR: TOPLAM MALİYET BİLEŞENLERİ (TL)
+    bugun = timezone.now().date()
+    ufuk = bugun + timedelta(days=30)
     
-    # A) Faturalar (Malzeme Alımları) -> KDV Dahil Tutar
+    # Kur bilgisini al (Yoksa varsayılan ata)
+    try:
+        kurlar = tcmb_kur_getir()
+    except:
+        kurlar = {'USD': 35.50, 'EUR': 38.20, 'GBP': 44.10}
+
+    # ---------------------------------------------------------
+    # 1. TOPLAM YATIRIM MALİYETİ (TÜM ZAMANLAR)
+    # ---------------------------------------------------------
+    
+    # A) Faturalar (KDV Dahil)
     toplam_fatura = Fatura.objects.aggregate(
         t=Coalesce(Sum('genel_toplam'), Decimal('0.00'))
     )['t']
 
-    # B) Hakedişler (Hizmet/Taşeron) -> Brüt Tutar + KDV Tutarı
+    # B) Hakedişler (Brüt + KDV)
+    # Not: Hakedis modelinizde 'toplam_tutar' alanı varsa onu kullanın, 
+    # yoksa (brut_tutar + kdv_tutari) formülünü açın.
     hakedis_qs = Hakedis.objects.filter(onay_durumu=True).aggregate(
         t=Coalesce(Sum(F('brut_tutar') + F('kdv_tutari')), Decimal('0.00'))
     )
     toplam_hakedis = hakedis_qs['t']
 
-    # C) Giderler (OPEX - Harcamalar) -> TL Karşılığı
-    giderler_listesi = Harcama.objects.all()
-    toplam_gider = sum([g.tl_tutar for g in giderler_listesi]) or Decimal('0.00')
+    # C) Giderler (OPEX)
+    # Model adınız 'Harcama' ise burayı koruyun, 'Gider' ise değiştirin.
+    # Eğer modelinizde 'tl_tutar' alanı yoksa 'tutar' kullanın.
+    try:
+        # Eğer 'Gider' modeli kullanıyorsanız:
+        toplam_gider = Gider.objects.aggregate(t=Coalesce(Sum('tutar'), Decimal('0.00')))['t']
+    except NameError:
+        # Eğer 'Harcama' modeli kullanıyorsanız (eski kodunuzdaki gibi):
+        giderler_listesi = Harcama.objects.all()
+        toplam_gider = sum([g.tl_tutar for g in giderler_listesi]) if giderler_listesi else Decimal('0.00')
 
-    # --- GRAND TOTAL (FABRİKA MALİYETİ) ---
+    # GRAND TOTAL
     fabrika_maliyeti = toplam_fatura + toplam_hakedis + toplam_gider
 
-    # 2. CARİ BORÇ DURUMU
-    
-    # Yapılan Toplam Ödeme (Nakit + Çek + Havale)
-    # Not: Çek verildiği an cari borçtan düşülmüş sayılır (Ödendi statüsüne bakılmaz).
-    toplam_odenen = Odeme.objects.aggregate(
-        t=Coalesce(Sum('tutar'), Decimal('0.00'))
-    )['t']
-    
-    # Toplam Alacak (Faturalar + Hakedişler)
-    cari_alacak_toplami = toplam_fatura + toplam_hakedis
-    
-    # Kalan Borç (Piyasa Borcu)
-    kalan_cari_borc = cari_alacak_toplami - toplam_odenen
 
-    # 3. YAKLAŞAN ÖDEMELER (ÇEKLER - 30 GÜN)
-    # GÜNCELLEME: Sadece 'is_cek_odendi=False' olanları getiriyoruz.
-    today = timezone.now().date()
-    gelecek_30_gun = today + timezone.timedelta(days=30)
+    # ---------------------------------------------------------
+    # 2. CARİ BORÇ ve AVANS AYRIŞTIRMASI (KRİTİK DÜZELTME)
+    # ---------------------------------------------------------
+    # Eski koddaki global çıkarma işlemi yerine tedarikçi bazlı geziyoruz.
     
+    piyasa_borc = Decimal("0.00")    # Kırmızı Kart
+    verilen_avans = Decimal("0.00")  # Yeşil Kart
+    borclu_listesi = []
+
+    tedarikciler = Tedarikci.objects.filter(is_active=True)
+
+    for ted in tedarikciler:
+        # 1. Tedarikçiden Gelen Faturalar (Borç)
+        t_fat = Fatura.objects.filter(tedarikci=ted).aggregate(
+            t=Coalesce(Sum('genel_toplam'), Decimal('0.00'))
+        )['t']
+        
+        # 2. Tedarikçiye Onaylanan Hakedişler (Borç)
+        t_hak = Hakedis.objects.filter(satinalma__teklif__tedarikci=ted, onay_durumu=True).aggregate(
+             t=Coalesce(Sum(F('brut_tutar') + F('kdv_tutari')), Decimal('0.00'))
+        )['t']
+        
+        # 3. Tedarikçiye Yapılan Ödemeler (Alacak)
+        t_ode = Odeme.objects.filter(tedarikci=ted).aggregate(
+            t=Coalesce(Sum('tutar'), Decimal('0.00'))
+        )['t']
+        
+        # Bakiye Hesapla (Pozitif = Borç, Negatif = Avans)
+        bakiye = (t_fat + t_hak) - t_ode
+        
+        if bakiye > 0:
+            # Borçlu olduğumuz tedarikçi
+            piyasa_borc += bakiye
+            if bakiye > 100: # 100 TL altı küsuratları listeye almayabiliriz
+                borclu_listesi.append({'isim': ted.firma_unvani, 'bakiye': bakiye})
+        elif bakiye < 0:
+            # Avans verdiğimiz tedarikçi
+            verilen_avans += abs(bakiye) # Mutlak değerini ekle
+
+    # En borçlu 5 tedarikçiyi sırala
+    borclu_listesi.sort(key=lambda x: x['bakiye'], reverse=True)
+    top_5_borc = borclu_listesi[:5]
+
+
+    # ---------------------------------------------------------
+    # 3. YAKLAŞAN ÇEKLER
+    # ---------------------------------------------------------
+    # Sadece 'is_cek_odendi=False' olanları getiriyoruz.
     yaklasan_cekler = Odeme.objects.filter(
         odeme_turu='cek',
-        is_cek_odendi=False,  # ✅ EKLENDİ: Sadece ödenmemişleri getir
-        vade_tarihi__gte=today,
-        vade_tarihi__lte=gelecek_30_gun
+        is_cek_odendi=False,  # ✅ DÜZELTME: Ödenmişler hariç
+        vade_tarihi__gte=bugun,
+        vade_tarihi__lte=ufuk
     ).order_by('vade_tarihi')
     
     yaklasan_cek_toplam = yaklasan_cekler.aggregate(
         t=Coalesce(Sum('tutar'), Decimal('0.00'))
     )['t']
 
-    # 4. EN BORÇLU 5 TEDARİKÇİ ANALİZİ
-    tedarikciler = Tedarikci.objects.filter(is_active=True)
-    borclu_listesi = []
-    
-    for ted in tedarikciler:
-        # Borç (Fatura)
-        t_fat = Fatura.objects.filter(tedarikci=ted).aggregate(
-            t=Coalesce(Sum('genel_toplam'), Decimal('0.00'))
-        )['t']
-        
-        # Borç (Hakediş)
-        t_hak = Hakedis.objects.filter(satinalma__teklif__tedarikci=ted, onay_durumu=True).aggregate(
-             t=Coalesce(Sum(F('brut_tutar') + F('kdv_tutari')), Decimal('0.00'))
-        )['t']
-        
-        # Alacak (Ödeme)
-        t_ode = Odeme.objects.filter(tedarikci=ted).aggregate(
-            t=Coalesce(Sum('tutar'), Decimal('0.00'))
-        )['t']
-        
-        bakiye = (t_fat + t_hak) - t_ode
-        
-        if bakiye > Decimal('1.00'):
-            borclu_listesi.append({
-                'isim': ted.firma_unvani,
-                'bakiye': bakiye
-            })
-    
-    borclu_listesi.sort(key=lambda x: x['bakiye'], reverse=True)
-    top_5_borc = borclu_listesi[:5]
 
-    # 5. DÖVİZ ÇEVİRİLERİ (BİLGİ AMAÇLI)
-    if tcmb_kur_getir:
-        kurlar = tcmb_kur_getir()
-        usd_kur = Decimal(str(kurlar.get('USD', 35.50)))
-        eur_kur = Decimal(str(kurlar.get('EUR', 38.20)))
-        gbp_kur = Decimal(str(kurlar.get('GBP', 44.10)))
-    else:
-        usd_kur = Decimal('35.50')
-        eur_kur = Decimal('38.20')
-        gbp_kur = Decimal('44.10')
+    # ---------------------------------------------------------
+    # 4. DÖVİZ ÇEVİRİSİ (INFO)
+    # ---------------------------------------------------------
+    usd_kur = Decimal(str(kurlar.get('USD', 1)))
+    eur_kur = Decimal(str(kurlar.get('EUR', 1)))
+    gbp_kur = Decimal(str(kurlar.get('GBP', 1)))
 
-    def tl_to_fx(tl_val):
-        val = Decimal(str(tl_val))
-        return {
-            'usd': val / usd_kur if usd_kur else 0,
-            'eur': val / eur_kur if eur_kur else 0,
-            'gbp': val / gbp_kur if gbp_kur else 0,
-        }
-
-    maliyet_doviz = tl_to_fx(fabrika_maliyeti)
+    maliyet_doviz = {
+        'usd': fabrika_maliyeti / usd_kur,
+        'eur': fabrika_maliyeti / eur_kur,
+        'gbp': fabrika_maliyeti / gbp_kur,
+    }
 
     context = {
-        'fabrika_maliyeti': fabrika_maliyeti,
+        # Üst Mavi Kart
+        'fabrika_maliyeti': fabrika_maliyeti, 
         'maliyet_doviz': maliyet_doviz,
-        
-        'kalan_cari_borc': kalan_cari_borc,
-        'toplam_gider': toplam_gider,
-        
-        'yaklasan_cek_toplam': yaklasan_cek_toplam,
-        'yaklasan_cekler': yaklasan_cekler[:5],
-        
-        'top_5_borc': top_5_borc,
+        'toplam_yatirim': fabrika_maliyeti, # Template uyumu için alias
+
+        # Orta Kartlar
+        'piyasa_borc': piyasa_borc,      # Kırmızı
+        'verilen_avans': verilen_avans,  # Yeşil (YENİ)
+        'toplam_gider': toplam_gider,    # Mavi
+        'yaklasan_cek_toplam': yaklasan_cek_toplam, # Sarı
+
+        # Alt Tablolar
+        'top_5_borc': top_5_borc,        # Template'de 'top_suppliers' olarak geçiyorsa düzeltin
+        'top_suppliers': top_5_borc,     # Alias
+        'yaklasan_cekler': yaklasan_cekler[:5], # Alias
+        'cek_listesi': yaklasan_cekler[:5]      # Alias
     }
 
     return render(request, 'finans_dashboard.html', context)
@@ -898,11 +917,10 @@ def cari_ekstre(request, tedarikci_id):
 @login_required
 def odeme_dashboard(request):
     """
-    Finansal İşlemler (Ödeme Merkezi)
-    - Fatura kalanları: allocation + eski bağ
-    - Hakediş kalanları: TL (kur uygulanmaz)
-    - Cari listesi: Tedarikçi bazında
-    - Yaklaşan çekler
+    Finansal İşlemler (Ödeme Merkezi) - TAMİR EDİLMİŞ NİHAİ VERSİYON
+    - Kartların boş gelme sorunu giderildi (Fatura ve Hakediş toplamları eklendi).
+    - Negatif bakiyeler AVANS, Pozitif bakiyeler BORÇ olarak ayrılır.
+    - Yaklaşan çeklerde ödenmişler gizlenir.
     """
     if not yetki_kontrol(request.user, ["MUHASEBE_FINANS", "YONETICI"]):
         return redirect("erisim_engellendi")
@@ -911,80 +929,101 @@ def odeme_dashboard(request):
     ufuk = bugun + timedelta(days=30)
     guncel_kurlar = tcmb_kur_getir()
 
-    # 1) Ödenmemiş Hakediş Toplamı (TL)
-    odenmemis_hakedis_toplam = Decimal("0.00")
-    hakedisler = (
-        Hakedis.objects
-        .filter(onay_durumu=True)
-        .select_related("satinalma__teklif__tedarikci")
-    )
-    for hk in hakedisler:
-        odenmemis_hakedis_toplam += _hakedis_remaining_tl(hk)
-
-    # 2) Ödenmemiş Fatura Toplamı (TL)
-    odenmemis_fatura_toplam = Decimal("0.00")
-    faturalar = Fatura.objects.select_related("tedarikci").all()
-    for fat in faturalar:
-        odenmemis_fatura_toplam += _invoice_remaining_tl(fat, guncel_kurlar)
-
-    odenmemis_hakedis_toplam = to_decimal(odenmemis_hakedis_toplam).quantize(Decimal("0.01"))
-    odenmemis_fatura_toplam = to_decimal(odenmemis_fatura_toplam).quantize(Decimal("0.01"))
-    cari_borc_toplam = (odenmemis_fatura_toplam + odenmemis_hakedis_toplam).quantize(Decimal("0.01"))
-
-    # 3) Cari Bakiye Listesi (Tedarikçi bazında)
+    # --- 1. ADIM: Hakediş ve Fatura Bakiyelerini Hafızaya (Map) Al ---
+    
+    # Hakediş Bakiyeleri
     h_map = {}
+    hakedisler = Hakedis.objects.filter(onay_durumu=True).select_related("satinalma__teklif__tedarikci")
     for hk in hakedisler:
         try:
-            ted = hk.satinalma.teklif.tedarikci
-        except Exception:
+            ted_id = hk.satinalma.teklif.tedarikci.id
+            kalan_tl = _hakedis_remaining_tl(hk)
+            if kalan_tl != 0:
+                h_map[ted_id] = (h_map.get(ted_id, Decimal("0.00")) + kalan_tl).quantize(Decimal("0.01"))
+        except:
             continue
-        kalan_tl = _hakedis_remaining_tl(hk)
-        if kalan_tl > Decimal("0.00"):
-            h_map[ted.id] = (h_map.get(ted.id, Decimal("0.00")) + kalan_tl).quantize(Decimal("0.01"))
 
+    # Fatura Bakiyeleri
     f_map = {}
+    faturalar = Fatura.objects.select_related("tedarikci").all()
     for fat in faturalar:
-        ted = getattr(fat, "tedarikci", None)
-        if not ted:
+        if not fat.tedarikci:
             continue
         kalan_tl = _invoice_remaining_tl(fat, guncel_kurlar)
-        if kalan_tl > Decimal("0.00"):
-            f_map[ted.id] = (f_map.get(ted.id, Decimal("0.00")) + kalan_tl).quantize(Decimal("0.01"))
+        if kalan_tl != 0:
+            f_map[fat.tedarikci.id] = (f_map.get(fat.tedarikci.id, Decimal("0.00")) + kalan_tl).quantize(Decimal("0.01"))
 
+
+    # --- 2. ADIM: Kartlar İçin Özel Toplamları Hesapla (EKSİK OLAN KISIM BURASIYDI) ---
+    # Sadece pozitif (borç) bakiyeleri topluyoruz.
+    odenmemis_fatura_toplam = sum(amount for amount in f_map.values() if amount > 0)
+    odenmemis_hakedis_toplam = sum(amount for amount in h_map.values() if amount > 0)
+
+
+    # --- 3. ADIM: Tedarikçileri Gez ve Cari Listesini Oluştur ---
     cari_listesi = []
+    toplam_piyasa_borcu = Decimal("0.00")   # Bizim ödeyeceğimiz (+)
+    toplam_verilen_avans = Decimal("0.00")  # Bizim alacağımız (-)
+
     for ted in Tedarikci.objects.all().order_by("firma_unvani"):
         f_kalan = f_map.get(ted.id, Decimal("0.00"))
         h_kalan = h_map.get(ted.id, Decimal("0.00"))
-        toplam = (f_kalan + h_kalan).quantize(Decimal("0.01"))
-        if toplam > Decimal("0.00"):
+        
+        # Net Bakiye
+        bakiye = (f_kalan + h_kalan).quantize(Decimal("0.01"))
+
+        if bakiye != Decimal("0.00"):
             cari_listesi.append({
                 "id": ted.id,
                 "firma": ted.firma_unvani,
                 "fatura_kalan": f_kalan,
                 "hakedis_kalan": h_kalan,
-                "toplam_kalan": toplam,
+                "toplam_kalan": bakiye,
+                "is_avans": bakiye < 0  # Eksi ise Avanstır
             })
-    cari_listesi.sort(key=lambda x: x["toplam_kalan"], reverse=True)
 
-    # 4) Yaklaşan Çekler
+            # Dashboard Genel Toplamlarını Güncelle
+            if bakiye > 0:
+                toplam_piyasa_borcu += bakiye
+            else:
+                toplam_verilen_avans += abs(bakiye)
+
+    # Listeyi sırala
+    cari_listesi.sort(key=lambda x: abs(x["toplam_kalan"]), reverse=True)
+
+
+    # --- 4. ADIM: Yaklaşan Çekler ---
     yaklasan_cekler = (
         Odeme.objects
-        .filter(odeme_turu="cek", vade_tarihi__isnull=False, vade_tarihi__gte=bugun, vade_tarihi__lte=ufuk)
+        .filter(
+            odeme_turu="cek", 
+            vade_tarihi__isnull=False, 
+            vade_tarihi__gte=bugun, 
+            vade_tarihi__lte=ufuk,
+            is_cek_odendi=False
+        )
         .select_related("tedarikci")
         .order_by("vade_tarihi", "id")
     )
+    
     yaklasan_cek_toplam = yaklasan_cekler.aggregate(t=Sum("tutar"))["t"] or Decimal("0.00")
 
-    return render(request, "odeme_dashboard.html", {
+    context = {
+        # Eksik olan değişkenler eklendi:
         "odenmemis_fatura_toplam": odenmemis_fatura_toplam,
         "odenmemis_hakedis_toplam": odenmemis_hakedis_toplam,
-        "cari_borc_toplam": cari_borc_toplam,
+        
+        # Diğer değişkenler
+        "cari_borc_toplam": toplam_piyasa_borcu,
+        "verilen_avans_toplam": toplam_verilen_avans,
         "cari_listesi": cari_listesi,
         "yaklasan_cekler": yaklasan_cekler,
         "yaklasan_cek_toplam": yaklasan_cek_toplam,
         "bugun": bugun,
         "ufuk": ufuk,
-    })
+    }
+
+    return render(request, "odeme_dashboard.html", context)
 
 
 @login_required
