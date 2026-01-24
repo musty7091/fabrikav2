@@ -35,8 +35,7 @@ urlpatterns = [
     path('cek-durum/<int:odeme_id>/', finans_payments.cek_durum_degistir, name='cek_durum_degistir'),
     
     # ✅ Tedarikçi Ekstresi (Cari Ekstre - Payments içinde)
-    path('tedarikci/<int:tedarikci_id>/', finans_payments.cari_ekstre, name='tedarikci_ekstresi'),
-
+    
     path('teklif/durum/<int:teklif_id>/<str:yeni_durum>/', views.teklif_durum_guncelle, name='teklif_durum_guncelle'),
 
     # ========================================================
@@ -91,7 +90,6 @@ urlpatterns = [
     # ========================================================
     path('hakedis/ekle/<int:siparis_id>/', finans_payments.hakedis_ekle, name='hakedis_ekle'),
     path('odeme/yap/', finans_payments.odeme_yap, name='odeme_yap'),
-    path('cari/ekstre/<int:tedarikci_id>/', finans_payments.cari_ekstre, name='cari_ekstre'),
     path('api/tedarikci-bakiye/<int:tedarikci_id>/', views.get_tedarikci_bakiye, name='api_tedarikci_bakiye'),
     path("finans/avans-mahsup/<int:tedarikci_id>/", finans_payments.avans_mahsup, name="avans_mahsup"),
     # ========================================================
