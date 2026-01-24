@@ -266,6 +266,21 @@ class Teklif(models.Model):
     para_birimi = models.CharField(max_length=3, choices=PARA_BIRIMI_CHOICES, default='TRY')
     kur_degeri = models.DecimalField(max_digits=10, decimal_places=4, default=1.0000, verbose_name="İşlem Kuru")
 
+    # ==========================================
+    # TEK GERÇEK: Onay anında kilitlenen TL alanları
+    # - Teklif döviz olabilir (USD/EUR/GBP/TRY)
+    # - Onaylandığı anda (servis katmanında) kur kilitlenir ve TL toplamlar burada saklanır
+    # - Sonraki süreçte finans ekranları bu TL alanları okur (kur tekrar uygulanmaz)
+    # ==========================================
+    locked_at = models.DateTimeField(null=True, blank=True, verbose_name="Kur Kilit Zamanı")
+    locked_rate = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True, verbose_name="Kilit Kur")
+    locked_rate_date = models.DateField(null=True, blank=True, verbose_name="Kilit Kur Tarihi")
+    locked_rate_source = models.CharField(max_length=50, blank=True, default="", verbose_name="Kur Kaynağı")
+
+    locked_subtotal_try = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, verbose_name="Kilit Ara Toplam (TL)")
+    locked_vat_try = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, verbose_name="Kilit KDV (TL)")
+    locked_total_try = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, verbose_name="Kilit Genel Toplam (TL)")
+
     kdv_dahil_mi = models.BooleanField(default=False, verbose_name="Bu fiyata KDV Dahil mi?")
     kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
 
@@ -620,8 +635,8 @@ class Hakedis(models.Model):
 
             super().save(*args, **kwargs)
 
-        def __str__(self):
-            return f"Hakediş #{self.hakedis_no}"
+    def __str__(self):
+        return f"Hakediş #{self.hakedis_no}"
 
     class Meta:
         verbose_name_plural = "6. Taşeron Hakedişleri"
@@ -692,21 +707,20 @@ class Fatura(models.Model):
 class FaturaKalem(models.Model):
     """
     Fatura satırları (çok kalem)
-    Not: Stok/finans etkilerini model save içine gömmüyoruz.
+    Not: Stok/finans etkilerini model save içine GÖMMÜYORUZ.
     """
-
-    fatura = models.ForeignKey(Fatura, on_delete=models.CASCADE, related_name="kalemler", verbose_name="Fatura")
-    malzeme = models.ForeignKey(Malzeme, on_delete=models.PROTECT, related_name="fatura_kalemleri", verbose_name="Malzeme")
+    fatura = models.ForeignKey("Fatura", on_delete=models.CASCADE, related_name="kalemler", verbose_name="Fatura")
+    malzeme = models.ForeignKey("Malzeme", on_delete=models.PROTECT, related_name="fatura_kalemleri", verbose_name="Malzeme")
 
     miktar = models.DecimalField(max_digits=15, decimal_places=3, default=0, verbose_name="Miktar")
 
-    # Yeni alanlar (formların beklediği)
+    # --- Yeni alanlar (formların beklediği) ---
     fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="Birim Fiyat")
     kdv_oran = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="KDV Oranı")
-    kdv_dahil_mi = models.BooleanField(default=False, verbose_name="Bu fiyat KDV dahil mi?")
+    kdv_dahil_mi = models.BooleanField(default=False, verbose_name="Fiyat KDV Dahil mi?")
     aciklama = models.CharField(max_length=255, blank=True, default="", verbose_name="Açıklama")
 
-    # Eski alanlar (geri uyum)
+    # --- Eski alanlar (projenin başka yerleri kullanıyor olabilir; senkron tutacağız) ---
     birim_fiyat = models.DecimalField(max_digits=15, decimal_places=4, default=0, verbose_name="(Eski) Birim Fiyat", editable=False)
     kdv_orani = models.IntegerField(choices=KDV_ORANLARI, default=20, verbose_name="(Eski) KDV Oranı", editable=False)
 
@@ -740,42 +754,32 @@ class FaturaKalem(models.Model):
             raise ValidationError({"fiyat": "Birim fiyat negatif olamaz."})
 
     def recalc(self):
-        """
-        KDV İKİ KEZ EKLENMESİN diye kritik nokta burası:
-
-        - kdv_dahil_mi = True ise: fiyat KDV DAHİL kabul edilir.
-          genel = miktar * fiyat
-          ara   = genel / (1 + oran)
-          kdv   = genel - ara
-
-        - kdv_dahil_mi = False ise: fiyat KDV HARİÇ kabul edilir.
-          ara   = miktar * fiyat
-          kdv   = ara * oran
-          genel = ara + kdv
-        """
         self._sync_legacy_fields()
 
-        kdv_yuzde = Decimal("0") if int(self.kdv_oran or 0) == -1 else Decimal(str(self.kdv_oran or 0))
-        oran = (kdv_yuzde / Decimal("100")).quantize(Decimal("0.0001"))
+        oran_int = self.kdv_oran
+        kdv_orani_dec = Decimal("0") if oran_int == -1 else Decimal(str(oran_int))
+        oran = (kdv_orani_dec / Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
         miktar = to_decimal(self.miktar)
         fiyat = to_decimal(self.fiyat)
 
         if self.kdv_dahil_mi:
+            # fiyat KDV dahil -> genel toplam direkt buradan
             genel = (miktar * fiyat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             bolen = (Decimal("1.0") + oran)
             if bolen <= 0:
                 ara = genel
             else:
                 ara = (genel / bolen).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            kdv_tutar = (genel - ara).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            kdv = (genel - ara).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         else:
+            # fiyat KDV hariç
             ara = (miktar * fiyat).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            kdv_tutar = (ara * oran).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            genel = (ara + kdv_tutar).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            kdv = (ara * oran).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            genel = (ara + kdv).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
         self.satir_ara_toplam = ara
-        self.satir_kdv = kdv_tutar
+        self.satir_kdv = kdv
         self.satir_genel_toplam = genel
 
     def save(self, *args, **kwargs):

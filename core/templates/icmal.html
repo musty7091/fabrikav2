@@ -175,10 +175,25 @@
                             <div class="fw-bold text-primary text-truncate mb-1" title="{{ teklif.tedarikci.firma_unvani }}">{{ teklif.tedarikci.firma_unvani }}</div>
                             
                             <div class="fs-4 fw-bold {% if teklif.id == talep.en_uygun_teklif_id and talep.teklifler.count > 1 %}text-success{% else %}text-dark{% endif %} mb-1">
-                                {{ teklif.toplam_fiyat_tl|floatformat:2|intcomma }} ₺
+                                {% if teklif.locked_total_try and teklif.locked_total_try > 0 %}
+                                    {{ teklif.locked_total_try|floatformat:2|intcomma }} ₺
+                                {% else %}
+                                    {{ teklif.toplam_fiyat_tl|floatformat:2|intcomma }} ₺
+                                {% endif %}
                             </div>
+
+                            {% if teklif.locked_total_try and teklif.locked_total_try > 0 %}
+                                <div class="small text-muted">
+                                    <i class="fas fa-lock me-1"></i> Kilitli Kur:
+                                    {% if teklif.locked_rate %}{{ teklif.locked_rate|floatformat:4 }}{% else %}-{% endif %}
+                                    {% if teklif.locked_rate_date %} ({{ teklif.locked_rate_date|date:"d.m.Y" }}){% endif %}
+                                    {% if teklif.locked_rate_source %} • {{ teklif.locked_rate_source }}{% endif %}
+                                </div>
+                            {% endif %}
                             
-                            <div class="small text-muted">Birim: {{ teklif.birim_fiyat|floatformat:2 }} {{ teklif.para_birimi }} {% if teklif.kdv_orani > 0 %}(+KDV){% endif %}</div>
+                            <div class="small text-muted">
+                                Birim: {{ teklif.birim_fiyat|floatformat:2 }} {{ teklif.para_birimi }} {% if teklif.kdv_orani > 0 %}(+KDV){% endif %}
+                            </div>
                             
                             {% if teklif.teklif_dosyasi %}
                                 <a href="{{ teklif.teklif_dosyasi.url }}" target="_blank" class="btn btn-sm btn-light w-100 mt-3 text-danger border"><i class="fas fa-file-pdf me-1"></i> Dosya</a>
