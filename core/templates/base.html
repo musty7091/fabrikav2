@@ -108,36 +108,39 @@
     <!-- Floating ikonlar (sağ alt) -->
     <div class="fab-wrap">
 
-        <!-- Stok Ekstresi -->
         <a href="{% url 'stok_ekstresi' %}" class="fab fab-stok"
-           data-bs-toggle="tooltip" data-bs-placement="left"
-           title="Stok Ekstresi" aria-label="Stok Ekstresi">
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Stok Ekstresi" aria-label="Stok Ekstresi">
             <i class="fa-solid fa-boxes-stacked"></i>
         </a>
 
-        <!-- Cari Ekstresi -->
         <a href="{% url 'cari_ekstresi' %}" class="fab fab-cari"
-           data-bs-toggle="tooltip" data-bs-placement="left"
-           title="Cari Ekstresi" aria-label="Cari Ekstresi">
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Cari Ekstresi" aria-label="Cari Ekstresi">
             <i class="fa-solid fa-address-book"></i>
         </a>
 
-        <!-- Serbest Fatura Girişi -->
         <a href="{% url 'serbest_fatura_girisi' %}" class="fab fab-serbest"
-           data-bs-toggle="tooltip" data-bs-placement="left"
-           title="Serbest Fatura Girişi" aria-label="Serbest Fatura Girişi">
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Serbest Fatura Girişi" aria-label="Serbest Fatura Girişi">
             <i class="fa-solid fa-file-circle-plus"></i>
         </a>
-        
+
+        <a href="{% url 'fatura_listesi' %}" class="fab" style="background:#ffc107; color:#212529; border:none;"
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Gelen Faturalar" aria-label="Gelen Faturalar">
+            <i class="fas fa-file-invoice"></i>
+        </a>
+
         <a href="{% url 'gider_listesi' %}" class="fab" style="background:#ffffff; color:#6f42c1; border:2px solid #6f42c1;"
             data-bs-toggle="tooltip" data-bs-placement="left"
             title="Giderler" aria-label="Giderler">
             <i class="fa-solid fa-receipt"></i>
         </a>
-        <!-- Ana Sayfa -->
+
         <a href="{% url 'dashboard' %}" class="fab fab-home"
-           data-bs-toggle="tooltip" data-bs-placement="left"
-           title="Ana Sayfa" aria-label="Ana Sayfa">
+        data-bs-toggle="tooltip" data-bs-placement="left"
+        title="Ana Sayfa" aria-label="Ana Sayfa">
             <i class="fa-solid fa-house"></i>
         </a>
 

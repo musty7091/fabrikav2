@@ -6,7 +6,7 @@ from django.conf.urls.static import static
 # Genel Viewlar (views/__init__.py üzerinden gelenler)
 from core import views
 
-# ✅ YENİ: Parçalanmış Finans Modülleri
+# Parçalanmış Finans Modülleri
 from core.views import finans_invoices, finans_payments
 from core.views.ekstre import stok_ekstresi, cari_ekstresi
 
@@ -20,9 +20,9 @@ urlpatterns = [
     # 2. Modüller (İcmal & Teklif)
     path('icmal/', views.icmal_raporu, name='icmal_raporu'),
     path('teklif/ekle/', views.teklif_ekle, name='teklif_ekle'),
+    path('teklif/durum/<int:teklif_id>/<str:yeni_durum>/', views.teklif_durum_guncelle, name='teklif_durum_guncelle'),
 
     # 3. Dashboardlar
-    # ✅ Güncellendi: Artık finans_payments içinde
     path('finans-dashboard/', finans_payments.finans_dashboard, name='finans_dashboard'),
     path('odeme-dashboard/', finans_payments.odeme_dashboard, name='odeme_dashboard'),
     path('depo-dashboard/', views.depo_dashboard, name='depo_dashboard'),
@@ -30,17 +30,14 @@ urlpatterns = [
     # 4. Detaylar
     path('finans/detay-ozet/', finans_payments.finans_ozeti, name='finans_ozeti'),
     path('cek-takibi/', finans_payments.cek_takibi, name='cek_takibi'),
-
-    # 5. İşlemler (Finans & Teklif)
     path('cek-durum/<int:odeme_id>/', finans_payments.cek_durum_degistir, name='cek_durum_degistir'),
-    
-    # ✅ Tedarikçi Ekstresi (Cari Ekstre - Payments içinde)
-    
-    path('teklif/durum/<int:teklif_id>/<str:yeni_durum>/', views.teklif_durum_guncelle, name='teklif_durum_guncelle'),
 
     # ========================================================
-    # ✅ YENİ FATURA SİSTEMİ (finans_invoices)
+    # ✅ FATURA SİSTEMİ (finans_invoices)
     # ========================================================
+    # Eksik olan liste linki EKLENDİ:
+    path('finans/faturalar/', finans_invoices.fatura_listesi, name='fatura_listesi'),
+
     # Standart Fatura Girişi (Siparişe bağlı)
     path("finans/fatura/<int:siparis_id>/", finans_invoices.fatura_girisi, name="fatura_girisi"),
     
@@ -50,7 +47,7 @@ urlpatterns = [
     # Hizmet Faturası
     path('fatura/hizmet/<int:siparis_id>/', finans_invoices.hizmet_faturasi_giris, name='hizmet_faturasi_giris'),
     
-    # Fatura Silme (Hala views içinde veya invoices içine taşıdıysanız oradan çağırın)
+    # Fatura Silme
     path('fatura/sil/<int:fatura_id>/', views.fatura_sil, name='fatura_sil'),
     # ========================================================
 
@@ -102,6 +99,7 @@ urlpatterns = [
     path('kategori/duzenle/<int:pk>/', views.kategori_duzenle, name='kategori_duzenle'),
     path('kategori/sil/<int:pk>/', views.kategori_sil, name='kategori_sil'),
     path('tanim/toggle/<str:model>/<int:pk>/', views.tanim_toggle_active, name='tanim_toggle_active'),
+    
     path('depolar/', views.depo_listesi, name='depo_listesi'),
     path('depo/duzenle/<int:pk>/', views.depo_duzenle, name='depo_duzenle'),
     path('depo/sil/<int:pk>/', views.depo_sil, name='depo_sil'),
@@ -120,8 +118,7 @@ urlpatterns = [
     path("tanimlar/gider/ekle/", views.gider_tanim_ekle, name="gider_tanim_ekle"),
     path("tanimlar/gider/<int:pk>/duzenle/", views.gider_tanim_duzenle, name="gider_tanim_duzenle"),
     path("tanimlar/gider/<int:pk>/toggle/", views.gider_tanim_toggle_active, name="gider_tanim_toggle_active"),
-
-
+    
     # 12. Yardımcılar
     path('islem-sonuc/<str:model_name>/<int:pk>/', views.islem_sonuc, name='islem_sonuc'),
     path('yazdir/<str:model_name>/<int:pk>/', views.belge_yazdir, name='belge_yazdir'),
@@ -134,5 +131,3 @@ urlpatterns = [
     # 14. Oturum
     path('cikis/', views.cikis_yap, name='cikis_yap'),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
-    

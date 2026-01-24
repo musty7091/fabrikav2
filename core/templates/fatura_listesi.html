@@ -1,0 +1,138 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Fatura Listesi | Fabrika Yönetim{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold"><i class="fas fa-file-invoice me-2"></i>FATURA YÖNETİMİ</h2>
+        <div>
+            <a href="{% url 'serbest_fatura_girisi' %}" class="btn btn-success me-2 shadow-sm">
+                <i class="fas fa-plus"></i> Serbest Fatura
+            </a>
+            <a href="{% url 'dashboard' %}" class="btn btn-secondary shadow-sm">
+                <i class="fas fa-arrow-left"></i> Geri
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-0 shadow-sm bg-light">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted">Başlangıç Tarihi</label>
+                    <input type="date" name="baslangic" class="form-control" value="{{ filtre.baslangic }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold text-muted">Bitiş Tarihi</label>
+                    <input type="date" name="bitis" class="form-control" value="{{ filtre.bitis }}">
+                </div>
+                
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-1"></i> Filtrele
+                    </button>
+                </div>
+                <div class="col-md-3">
+                    <a href="{% url 'fatura_listesi' %}" class="btn btn-outline-secondary w-100">
+                        <i class="fas fa-undo me-1"></i> Temizle
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-white" style="background: linear-gradient(45deg, #0d6efd, #0a58ca);">
+                <div class="card-body">
+                    <h6 class="text-uppercase opacity-75 small">Toplam Tutar (KDV Dahil)</h6>
+                    <h3 class="fw-bold mb-0">{{ ozet.toplam_tutar|floatformat:2|intcomma }} ₺</h3>
+                    <small class="opacity-75">{{ ozet.adet }} adet fatura</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-white" style="background: linear-gradient(45deg, #dc3545, #b02a37);">
+                <div class="card-body">
+                    <h6 class="text-uppercase opacity-75 small">Toplam KDV Yükü</h6>
+                    <h3 class="fw-bold mb-0">{{ ozet.toplam_kdv|floatformat:2|intcomma }} ₺</h3>
+                    <small class="opacity-75">Ödenecek vergi tutarı</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm text-white" style="background: linear-gradient(45deg, #198754, #146c43);">
+                <div class="card-body">
+                    <h6 class="text-uppercase opacity-75 small">Net Matrah (KDV Hariç)</h6>
+                    <h3 class="fw-bold mb-0">{{ ozet.toplam_matrah|floatformat:2|intcomma }} ₺</h3>
+                    <small class="opacity-75">Gerçek maliyet toplamı</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-striped mb-0 align-middle">
+                    <thead class="bg-dark text-white">
+                        <tr>
+                            <th class="ps-3">Tarih</th>
+                            <th>Fatura No</th>
+                            <th>Tedarikçi</th>
+                            <th>Tür</th>
+                            <th class="text-end">Matrah</th>
+                            <th class="text-end">KDV</th>
+                            <th class="text-end">Genel Toplam</th>
+                            <th class="text-end pe-3">İşlemler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for fatura in faturalar %}
+                        <tr>
+                            <td class="ps-3">{{ fatura.tarih|date:"d.m.Y" }}</td>
+                            <td class="fw-bold">{{ fatura.fatura_no }}</td>
+                            <td>
+                                <a href="{% url 'tedarikci_duzenle' fatura.tedarikci.id %}" class="text-decoration-none fw-bold text-dark">
+                                    {{ fatura.tedarikci.firma_unvani }}
+                                </a>
+                            </td>
+                            <td>
+                                {% if fatura.bagli_siparis %}
+                                    <span class="badge bg-primary">Sipariş</span>
+                                {% else %}
+                                    <span class="badge bg-info text-dark">Serbest</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-muted">{{ fatura.ara_toplam|floatformat:2 }}</td>
+                            <td class="text-end text-danger small">{{ fatura.kdv_toplam|floatformat:2 }}</td>
+                            <td class="text-end fw-bold fs-6">{{ fatura.genel_toplam|floatformat:2 }} ₺</td>
+                            <td class="text-end pe-3">
+                                <a href="{% url 'belge_yazdir' 'fatura' fatura.id %}" target="_blank" class="btn btn-sm btn-warning text-dark" title="Giriş Fişi">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                                <a href="{% url 'fatura_sil' fatura.id %}" class="btn btn-sm btn-light border text-danger ms-1" onclick="return confirm('Silmek istediğinize emin misiniz?');" title="Sil">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-muted">
+                                <i class="fas fa-search fa-2x mb-3 opacity-50"></i><br>
+                                Bu tarih aralığında fatura bulunamadı.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

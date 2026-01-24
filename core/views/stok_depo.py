@@ -117,6 +117,13 @@ def depo_transfer(request):
     siparis_id = request.GET.get('siparis_id') or request.POST.get('siparis_id')
     siparis, initial_data = None, {'tarih': timezone.now().date()}
 
+    # 1. URL'den gelen parametreleri (malzeme, kaynak_depo) yakala
+    if request.GET.get('malzeme'):
+        initial_data['malzeme'] = request.GET.get('malzeme')
+    if request.GET.get('kaynak_depo'):
+        initial_data['kaynak_depo'] = request.GET.get('kaynak_depo')
+
+    # 2. Eğer Siparişten geliyorsa, bilgileri ez
     if siparis_id:
         siparis = get_object_or_404(SatinAlma, id=siparis_id)
         # Çıkış özeti
@@ -139,17 +146,22 @@ def depo_transfer(request):
             kaynak_stok = transfer.malzeme.depo_stogu(transfer.kaynak_depo.id)
             if transfer.miktar > kaynak_stok:
                 messages.error(request, f"⛔ Kaynak depoda yeterli stok yok! Mevcut: {kaynak_stok}")
-                return redirect(f"{request.path}?siparis_id={siparis_id}" if siparis_id else request.path)
+                url = request.path
+                if siparis_id: url += f"?siparis_id={siparis_id}"
+                return redirect(url)
             
             if siparis:
                 transfer.bagli_siparis = siparis
                 
-            transfer.save() # Sinyaller üzerinden StockService'i tetikler
+            transfer.save() 
             messages.success(request, "✅ Transfer başarıyla kaydedildi.")
-            return redirect('siparis_listesi') if siparis else redirect('stok_listesi')
+            
+            # ✅ İŞLEM SONUCU VE YAZDIRMA EKRANI
+            return redirect('islem_sonuc', model_name='depotransfer', pk=transfer.id)
     else:
         form = DepoTransferForm(initial=initial_data)
         
+    # ⚠️ HATA BURADAYDI: Bu satır eksik veya girintisi yanlıştı.
     return render(request, 'depo_transfer.html', {'form': form, 'siparis': siparis})
 
 @login_required

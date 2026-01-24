@@ -1,15 +1,12 @@
-# core/views/finans_invoices.py
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib import messages
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from django.utils import timezone
-from core.models import SatinAlma, Depo, Fatura
-# Formlar (İsim düzeltildi)
+from django.db.models import Sum, Count
+from core.models import Fatura, SatinAlma
 from core.forms import FaturaGirisForm, SerbestFaturaGirisForm, FaturaKalemFormSet
-# Servis
-from core.services.finans_invoices import InvoiceService
-# Güvenlik
-from core.views.guvenlik import yetki_kontrol
+from core.services import InvoiceService
+from core.decorators import yetki_kontrol
 
 @login_required
 def fatura_girisi(request, siparis_id):
@@ -27,7 +24,6 @@ def fatura_girisi(request, siparis_id):
         return redirect('hizmet_faturasi_giris', siparis_id=siparis.id)
 
     if request.method == "POST":
-        # Eski SiparisFaturaForm yerine artık FaturaGirisForm kullanıyoruz
         form = FaturaGirisForm(request.POST, request.FILES)
         
         if form.is_valid():
@@ -37,19 +33,17 @@ def fatura_girisi(request, siparis_id):
                 InvoiceService.fatura_olustur_siparisten(fatura, siparis)
                 
                 messages.success(request, f"✅ Fatura siparişten otomatik oluşturuldu. Toplam: {fatura.genel_toplam}")
-                return redirect("siparis_listesi")
+                return redirect('islem_sonuc', model_name='fatura', pk=fatura.id)
             except Exception as e:
                 messages.error(request, f"⛔ Hata: {str(e)}")
         else:
             messages.error(request, "⛔ Form bilgilerini kontrol ediniz.")
     else:
-        # Formun boş hali
         form = FaturaGirisForm(initial={"tarih": timezone.now().date()})
 
     return render(request, "fatura_girisi.html", {
         "siparis": siparis, 
         "form": form,
-        # 'formset' göndermiyoruz, böylece template'de tablo çıkmayacak
     })
 
 @login_required
@@ -74,7 +68,7 @@ def serbest_fatura_girisi(request):
                 InvoiceService.fatura_kaydet_manuel(fatura, formset, depo_id=depo_id)
 
                 messages.success(request, f"✅ Serbest fatura kaydedildi.")
-                return redirect("serbest_fatura_girisi")
+                return redirect('islem_sonuc', model_name='fatura', pk=fatura.id)
             except Exception as e:
                 messages.error(request, f"⛔ Hata: {str(e)}")
         else:
@@ -107,7 +101,7 @@ def hizmet_faturasi_giris(request, siparis_id):
                 InvoiceService.fatura_olustur_siparisten(fatura, siparis)
                 
                 messages.success(request, "✅ Hizmet faturası işlendi.")
-                return redirect('siparis_listesi')
+                return redirect('islem_sonuc', model_name='fatura', pk=fatura.id)
             except Exception as e:
                 messages.error(request, str(e))
     else:
@@ -117,3 +111,54 @@ def hizmet_faturasi_giris(request, siparis_id):
         'siparis': siparis,
         'form': form
     })
+
+@login_required
+def fatura_listesi(request):
+    """
+    Sisteme kayıtlı faturaların listelendiği ekran.
+    ÖZELLİK: Tarih filtresi ve Finansal Özet Kartları eklendi.
+    DÜZELTME: Veritabanı tip hataları (Decimal/Float) Python tarafında 'or 0' ile çözüldü.
+    """
+    if not yetki_kontrol(request.user, ['MUHASEBE_FINANS', 'YONETICI', 'OFIS_VE_SATINALMA']):
+        return redirect('erisim_engellendi')
+
+    # 1. Filtre Parametrelerini Al
+    baslangic = request.GET.get('baslangic')
+    bitis = request.GET.get('bitis')
+    
+    # 2. Temel Sorgu
+    faturalar = Fatura.objects.all().select_related('tedarikci').order_by('-tarih', '-created_at')
+
+    # 3. Tarih Filtresi Uygula
+    if baslangic:
+        faturalar = faturalar.filter(tarih__gte=baslangic)
+    if bitis:
+        faturalar = faturalar.filter(tarih__lte=bitis)
+
+    # 4. Özet Hesaplamaları (GÜVENLİ YÖNTEM)
+    # Coalesce kullanmadan, ham veriyi alıp Python'da 0'a çeviriyoruz.
+    # Bu yöntem veritabanı backend'inden bağımsız çalışır ve tip hatası vermez.
+    ham_ozet = faturalar.aggregate(
+        toplam_tutar=Sum('genel_toplam'),
+        toplam_kdv=Sum('kdv_toplam'),
+        toplam_matrah=Sum('ara_toplam'),
+        adet=Count('id')
+    )
+
+    ozet = {
+        'toplam_tutar': ham_ozet['toplam_tutar'] or 0,
+        'toplam_kdv': ham_ozet['toplam_kdv'] or 0,
+        'toplam_matrah': ham_ozet['toplam_matrah'] or 0,
+        'adet': ham_ozet['adet']
+    }
+
+    context = {
+        'faturalar': faturalar,
+        'ozet': ozet,
+        'filtre': {
+            'baslangic': baslangic, 
+            'bitis': bitis
+        }
+    }
+    
+    return render(request, 'fatura_listesi.html', context)

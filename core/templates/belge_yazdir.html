@@ -1,148 +1,271 @@
-{% extends 'base.html' %}
-
-{% block title %}{{ baslik }}{% endblock %}
-
-{% block extra_css %}
-<style>
-    /* BASE.HTML'DEN GELEN MENÜLERİ GİZLE */
-    nav.navbar, .sidebar, .main-footer { display: none !important; }
-    
-    /* GENEL AYARLAR */
-    body { 
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-        background: #eee !important; /* Base rengini ez */
-        margin: 0; 
-        padding: 20px; 
-    }
-    
-    /* SAYFA YAPISI */
-    .page { 
-        background: white; 
-        width: 210mm; 
-        min-height: 297mm; /* Ekranda A4 gibi görünsün */
-        display: block; 
-        margin: 0 auto; 
-        padding: 20mm; 
-        box-shadow: 0 0 15px rgba(0,0,0,0.1); 
-        box-sizing: border-box; 
-    }
-    
-    .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-    .company-name { font-size: 24px; font-weight: 800; color: #2c3e50; text-transform: uppercase; letter-spacing: 1px; }
-    .title { font-size: 18px; margin-top: 10px; font-weight: 600; color: #555; }
-
-    /* TABLO AYARLARI */
-    .data-table { 
-        width: 100%; 
-        border-collapse: collapse; 
-        margin-bottom: 20px; 
-        table-layout: fixed; 
-    }
-    
-    .data-table th, .data-table td { 
-        padding: 10px 15px; 
-        border-bottom: 1px solid #e0e0e0; 
-        text-align: left; 
-        vertical-align: top; 
-        font-size: 14px;
-    }
-
-    .data-table th { width: 35%; background-color: #f8f9fa; font-weight: 600; color: #555; }
-    .data-table td { width: 65%; font-weight: 500; color: #000; word-wrap: break-word; }
-
-    /* ALT BİLGİ */
-    .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
-    .stamp-box { 
-        margin-top: 30px; 
-        float: right; 
-        width: 200px; 
-        height: 80px; 
-        text-align: center; 
-        border: 1px dashed #ccc; 
-        padding-top: 10px;
-        color: #999;
-    }
-
-    /* YAZDIRMA MODU (BOŞ SAYFA SORUNU İÇİN KRİTİK AYARLAR) */
-    @media print {
-        html, body {
-            height: auto;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white;
-            overflow: hidden; /* Taşmaları gizle */
-        }
-        .page { 
-            box-shadow: none; 
-            margin: 0; 
-            width: 100%; 
-            height: auto; 
-            min-height: 0; 
-            border: none; 
-            padding: 10mm; 
-            page-break-after: avoid; 
-        }
-        .no-print { display: none !important; }
-        .stamp-box { border: none; }
+{% load humanize %}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ baslik }} - {{ kod }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
         
-        /* Eğer Bakiye satırı ise koyu yap */
-        tr:last-child th, tr:last-child td {
-            font-weight: bold;
-            border-top: 2px solid #000;
+        body { font-family: 'Roboto', sans-serif; background: #525659; margin: 0; padding: 20px; color: #333; }
+        
+        /* EKRAN GÖRÜNÜMÜ: A4 Dikey simülasyonu */
+        .page {
+            background: white;
+            width: 210mm;
+            min-height: 297mm;
+            padding: 20mm;
+            margin: 0 auto;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            position: relative;
+            box-sizing: border-box;
         }
-    }
-</style>
-{% endblock %}
+        
+        /* Header, Logo, Tablo vb. stiller (AYNI) */
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+        .logo { font-size: 26px; font-weight: bold; color: #333; text-transform: uppercase; letter-spacing: 2px; }
+        .belge-info { text-align: right; }
+        .belge-title { font-size: 20px; font-weight: bold; margin-bottom: 5px; color: #000; text-transform: uppercase; }
+        .belge-meta { font-size: 13px; color: #555; margin-bottom: 2px;}
 
-{% block content %}
-    <div class="no-print" style="text-align: center; margin-bottom: 20px; position: sticky; top: 0; background: #eee; padding: 10px; border-bottom: 1px solid #ccc; z-index: 100;">
-        <button onclick="window.print()" style="padding: 10px 25px; font-size: 16px; background: #0d6efd; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-right: 10px;">
-            🖨️ YAZDIR
-        </button>
-        <button onclick="window.close()" style="padding: 10px 25px; font-size: 16px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            KAPAT
-        </button>
+        .info-box { background: #f8f9fa; border: 1px solid #ddd; padding: 15px; margin-bottom: 25px; border-radius: 4px; display: flex; justify-content: space-between; }
+        .info-group h4 { margin: 0 0 5px 0; font-size: 14px; text-transform: uppercase; color: #666; }
+        .info-group p { margin: 0; font-weight: bold; font-size: 15px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
+        th { text-align: left; background: #333; color: white; padding: 10px; font-weight: bold; text-transform: uppercase; }
+        td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+        tr:nth-child(even) { background-color: #fcfcfc; }
+        
+        .text-end { text-align: right; }
+        .text-center { text-align: center; }
+        .fw-bold { font-weight: bold; }
+        
+        .total-section { display: flex; justify-content: flex-end; margin-top: 10px; }
+        .total-table { width: 40%; }
+        .total-table td { border: none; padding: 5px 10px; }
+        .grand-total { border-top: 2px solid #333 !important; font-size: 16px; font-weight: bold; background: #eee; }
+
+        .signatures { display: flex; justify-content: space-between; margin-top: 80px; page-break-inside: avoid; }
+        .sign-box { width: 30%; text-align: center; }
+        .sign-title { font-weight: bold; margin-bottom: 50px; font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+        .sign-line { border-top: 1px solid #333; width: 80%; margin: 0 auto; }
+
+        .no-print { position: fixed; top: 20px; right: 20px; z-index: 999; display: flex; gap: 10px; }
+        .btn { background: #333; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2); cursor: pointer; border: none; font-size: 14px; transition: all 0.2s; }
+        .btn:hover { background: #000; transform: translateY(-2px); }
+
+        /* YAZDIRMA AYARLARI (GÜNCELLENDİ) */
+        @media print {
+            @page {
+                size: A4 portrait; /* ✅ KESİN DİKEY ZORLAMA */
+                margin: 10mm;
+            }
+
+            body { 
+                background: white; 
+                padding: 0; 
+                margin: 0; 
+                /* Bazı tarayıcılar için genişliği kısıtla */
+                width: 210mm;
+            }
+
+            .page { 
+                box-shadow: none; 
+                margin: 0; 
+                width: 100%;
+                min-height: initial; 
+                padding: 0; 
+                border: none; 
+            }
+
+            .no-print { display: none; }
+            
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            .signatures { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="no-print">
+        <button onclick="window.print()" class="btn"><i class="fas fa-print me-2"></i> YAZDIR</button>
+        <button onclick="window.history.back()" class="btn" style="background:#6c757d;"><i class="fas fa-arrow-left me-2"></i> GERİ</button>
     </div>
 
     <div class="page">
         <div class="header">
-            <div class="company-name">AECO İNŞAAT VE PROJE YÖNETİMİ</div>
-            <div class="title">{{ baslik }}</div>
+            <div class="logo"><i class="fas fa-layer-group"></i> FABRİKA YÖNETİM</div>
+            <div class="belge-info">
+                <div class="belge-title">{{ baslik }}</div>
+                <div class="belge-meta"><strong>Belge No:</strong> {{ kod }}</div>
+                <div class="belge-meta"><strong>Tarih:</strong> {{ tarih|date:"d.m.Y" }}</div>
+            </div>
         </div>
 
-        <div style="text-align: right; margin-bottom: 20px; font-size: 12px; color: #666;">
-            <strong>Tarih:</strong> {{ tarih_saat|date:"d.m.Y H:i" }}
+        {% if model_name == 'satinalma' %}
+            <div class="info-box">
+                <div class="info-group">
+                    <h4>TEDARİKÇİ FİRMA</h4>
+                    <p>{{ belge.teklif.tedarikci.firma_unvani }}</p>
+                </div>
+                <div class="info-group text-end">
+                    <h4>SİPARİŞ DETAYLARI</h4>
+                    <p>{{ belge.get_teslimat_durumu_display }}</p>
+                </div>
+            </div>
+            <table>
+                <thead>
+                    <tr><th>Malzeme / Hizmet</th><th class="text-center">Miktar</th><th class="text-end">Birim Fiyat</th><th class="text-end">Toplam</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <strong>{% if belge.teklif.malzeme %}{{ belge.teklif.malzeme.isim }}{% else %}{{ belge.teklif.is_kalemi.isim }}{% endif %}</strong>
+                            <br><small class="text-muted">{{ belge.aciklama }}</small>
+                        </td>
+                        <td class="text-center fw-bold">{{ belge.toplam_miktar|floatformat:2 }}</td>
+                        <td class="text-end">{{ belge.teklif.birim_fiyat|floatformat:2 }} {{ belge.teklif.para_birimi }}</td>
+                        <td class="text-end fw-bold">{{ belge.teklif.toplam_fiyat_tl|floatformat:2 }} TL</td>
+                    </tr>
+                </tbody>
+            </table>
+
+        {% elif model_name == 'hakedis' %}
+            <div class="info-box">
+                <div class="info-group">
+                    <h4>YÜKLENİCİ</h4>
+                    <p>{{ belge.satinalma.teklif.tedarikci.firma_unvani }}</p>
+                </div>
+                <div class="info-group text-end">
+                    <h4>PROJE</h4>
+                    <p>{{ belge.satinalma.teklif.is_kalemi.isim }}</p>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th>Kalem</th><th class="text-end">Oran</th><th class="text-end">Tutar</th></tr></thead>
+                <tbody>
+                    <tr><td>Bu Dönem İlerlemesi</td><td class="text-end">%{{ belge.tamamlanma_orani }}</td><td class="text-end">{{ belge.brut_tutar|floatformat:2 }} TL</td></tr>
+                    <tr><td>KDV</td><td class="text-end">%{{ belge.kdv_orani }}</td><td class="text-end">{{ belge.kdv_tutari|floatformat:2 }} TL</td></tr>
+                </tbody>
+            </table>
+            <div class="total-section">
+                <table class="total-table">
+                    <tr><td>Ara Toplam:</td><td class="text-end fw-bold">{{ belge.brut_tutar|add:belge.kdv_tutari|floatformat:2 }} TL</td></tr>
+                    {% if belge.stopaj_tutari > 0 %}<tr><td class="text-danger">Stopaj:</td><td class="text-end text-danger">-{{ belge.stopaj_tutari|floatformat:2 }}</td></tr>{% endif %}
+                    {% if belge.teminat_tutari > 0 %}<tr><td class="text-danger">Teminat:</td><td class="text-end text-danger">-{{ belge.teminat_tutari|floatformat:2 }}</td></tr>{% endif %}
+                    {% if belge.avans_kesintisi > 0 %}<tr><td class="text-danger">Avans:</td><td class="text-end text-danger">-{{ belge.avans_kesintisi|floatformat:2 }}</td></tr>{% endif %}
+                    <tr class="grand-total"><td>ÖDENECEK NET:</td><td class="text-end">{{ belge.odenecek_net_tutar|floatformat:2 }} TL</td></tr>
+                </table>
+            </div>
+
+        {% elif model_name == 'fatura' %}
+            <div class="info-box">
+                <div class="info-group">
+                    <h4>TEDARİKÇİ</h4>
+                    <p>{{ belge.tedarikci.firma_unvani }}</p>
+                    <small>Fatura No: {{ belge.fatura_no }}</small>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th>Kalem</th><th class="text-center">Miktar</th><th class="text-end">Fiyat</th><th class="text-end">Tutar</th></tr></thead>
+                <tbody>
+                    {% for kalem in belge.kalemler.all %}
+                    <tr>
+                        <td>{{ kalem.malzeme.isim }}</td>
+                        <td class="text-center">{{ kalem.miktar|floatformat:2 }}</td>
+                        <td class="text-end">{{ kalem.fiyat|floatformat:2 }}</td>
+                        <td class="text-end">{{ kalem.satir_genel_toplam|floatformat:2 }} TL</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="total-section">
+                <table class="total-table">
+                    <tr class="grand-total"><td>GENEL TOPLAM:</td><td class="text-end">{{ belge.genel_toplam|floatformat:2 }} TL</td></tr>
+                </table>
+            </div>
+
+        {% elif model_name == 'depotransfer' %}
+            <div class="info-box">
+                <div class="info-group">
+                    <h4>ÇIKIŞ YAPILAN DEPO</h4>
+                    <p>{{ belge.kaynak_depo.isim }}</p>
+                </div>
+                <div class="info-group text-end">
+                    <h4>GİRİŞ YAPILAN DEPO (HEDEF)</h4>
+                    <p>{{ belge.hedef_depo.isim }}</p>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th>Transfer Edilen Malzeme</th><th class="text-end">Transfer Miktarı</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>
+                            <strong>{{ belge.malzeme.isim }}</strong>
+                            {% if belge.aciklama %}<br><small class="text-muted">{{ belge.aciklama }}</small>{% endif %}
+                        </td>
+                        <td class="text-end fw-bold fs-5">{{ belge.miktar|floatformat:2 }} {{ belge.malzeme.get_birim_display }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="margin-top:20px; border:1px solid #eee; padding:15px; background:#fafafa;">
+                <small><strong>Teslimat Notu:</strong> Bu belge, belirtilen malzemenin iki depo arasındaki fiziksel transferini teyit eder.</small>
+            </div>
+
+        {% elif model_name == 'harcama' %}
+            <div style="padding: 20px; border: 2px dashed #333; background: #fffcf0; text-align: center; margin-bottom: 20px;">
+                <h2 style="margin:0;">{{ belge.tutar|floatformat:2 }} {{ belge.para_birimi }}</h2>
+                <small>HARCAMA TUTARI</small>
+            </div>
+            <table class="table table-bordered">
+                <tr><td width="30%"><strong>Gider Kategorisi:</strong></td><td>{{ belge.kategori.isim }}</td></tr>
+                <tr><td><strong>Açıklama / Detay:</strong></td><td>{{ belge.aciklama }}</td></tr>
+                <tr><td><strong>Ödeme Yöntemi:</strong></td><td>Kasa / Nakit / Kredi Kartı</td></tr>
+            </table>
+
+        {% elif model_name == 'tedarikci' %}
+            <div style="padding: 30px; background: #fff; border: 1px solid #ccc; margin-bottom: 30px;">
+                <p>Sayın <strong>{{ belge.firma_unvani }}</strong>,</p>
+                <p>Şirketimiz kayıtlarına göre <strong>{{ tarih|date:"d.m.Y" }}</strong> tarihi itibarıyla cari hesap bakiyeniz aşağıdadır.</p>
+                <p>Mutabık olup olmadığınızı tarafımıza bildirmenizi rica ederiz.</p>
+                
+                <table style="margin-top: 30px; border: 2px solid #000;">
+                    <tr style="background:#eee;">
+                        <th class="text-center">TOPLAM BORÇ (Faturalar)</th>
+                        <th class="text-center">TOPLAM ALACAK (Ödemeler)</th>
+                        <th class="text-center">BAKİYE</th>
+                    </tr>
+                    <tr>
+                        <td class="text-center" style="padding: 15px;">{{ ekstra.borc|floatformat:2 }} TL</td>
+                        <td class="text-center" style="padding: 15px;">{{ ekstra.alacak|floatformat:2 }} TL</td>
+                        <td class="text-center fw-bold fs-5" style="padding: 15px;">
+                            {{ ekstra.bakiye|floatformat:2 }} TL
+                            <br><small>({% if ekstra.bakiye > 0 %}Size Borçluyuz{% else %}Alacaklıyız{% endif %})</small>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+        {% else %}
+            <div style="padding: 20px; border: 2px dashed #333; background: #fffcf0; text-align: center; margin-bottom: 30px;">
+                <h2 style="margin:0;">{{ belge.tutar|floatformat:2 }} {{ belge.para_birimi }}</h2>
+                <small>ÖDENEN TUTAR</small>
+            </div>
+            <table>
+                <tr><td><strong>Firma:</strong></td><td>{{ belge.tedarikci.firma_unvani }}</td></tr>
+                <tr><td><strong>Açıklama:</strong></td><td>{{ belge.aciklama }}</td></tr>
+            </table>
+        {% endif %}
+
+        <div class="signatures">
+            <div class="sign-box"><div class="sign-title">DÜZENLEYEN</div><div class="sign-line"></div></div>
+            <div class="sign-box"><div class="sign-title">KONTROL / ONAY</div><div class="sign-line"></div></div>
+            <div class="sign-box"><div class="sign-title">TESLİM ALAN / FİRMA</div><div class="sign-line"></div></div>
         </div>
 
-        <table class="data-table">
-            <tbody>
-                {% for key, value in data.items %}
-                <tr {% if "Bakiye" in key %}style="background-color:#fff3cd; font-weight:bold; border-top: 2px solid #333;"{% endif %}>
-                    <th>{{ key }}</th>
-                    <td>{{ value }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-
-        <div class="stamp-box">
-            <p style="font-weight: bold; font-size: 14px; color: #000;">Yetkili Kaşe / İmza</p>
-        </div>
-        <div style="clear: both;"></div>
-
-        <div class="footer">
-            Bu belge <b>AECO Fabrika Yönetim Sistemi</b> tarafından otomatik oluşturulmuştur.<br>
-            Mali değeri yoktur, bilgi amaçlıdır.
-        </div>
     </div>
-{% endblock %}
-
-{% block extra_js %}
-    <script>
-        window.onload = function() {
-            setTimeout(function() {
-                window.print();
-            }, 800);
-        }
-    </script>
-{% endblock %}
+</body>
+</html>

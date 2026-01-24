@@ -10,7 +10,7 @@ from django.core.exceptions import ObjectDoesNotExist
 # --- MODELLERİN EKSİKSİZ IMPORT EDİLMESİ ---
 from core.models import (
     MalzemeTalep, Teklif, Odeme, Harcama, 
-    SatinAlma, Fatura, Malzeme, Hakedis, Depo, Tedarikci
+    SatinAlma, Fatura, Malzeme, Hakedis, Depo, Tedarikci, DepoTransfer, DepoHareket
 )
 from .guvenlik import yetki_kontrol
 from core.utils import to_decimal, tcmb_kur_getir
@@ -55,96 +55,139 @@ def finans_dashboard(request):
 
 @login_required
 def islem_sonuc(request, model_name, pk):
-    return render(request, 'islem_sonuc.html', {'model_name': model_name, 'pk': pk})
+    """
+    İşlem başarılı olduktan sonra "Yazdırılsın mı?" sorusunu soran ara ekran.
+    Hayıra basınca ilgili listeye yönlendirir.
+    """
+    context = {
+        'model_name': model_name,
+        'pk': pk,
+    }
+
+    # "Hayır" denildiğinde dönülecek URL'yi belirle
+    if model_name == 'depotransfer':
+        # Envanter sayfasına dön
+        context['return_url'] = 'stok_listesi' 
+        
+    elif model_name == 'fatura':
+        # Fatura listesine dön
+        context['return_url'] = 'fatura_listesi'
+        
+    elif model_name == 'odeme':
+        # Finans paneline dön
+        context['return_url'] = 'odeme_dashboard'
+        
+    elif model_name == 'harcama':
+        # Gider listesine dön
+        context['return_url'] = 'gider_listesi'
+        
+    elif model_name == 'tedarikci':
+        # Tedarikçi listesine dön
+        context['return_url'] = 'tedarikci_listesi'
+        
+    else:
+        # Varsayılan dashboard
+        context['return_url'] = 'dashboard'
+
+    return render(request, 'islem_sonuc.html', context)
+
+# core/views/genel.py dosyasındaki belge_yazdir fonksiyonunu bununla değiştirin:
 
 @login_required
 def belge_yazdir(request, model_name, pk):
-    belge_data = {}
-    baslik = ""
+    """
+    GENEL BELGE YAZDIRMA MODÜLÜ (GENİŞLETİLMİŞ)
+    Tüm operasyonel belgeler için A4 çıktı üretir.
+    """
+    context = {}
     
-    # Basit bakiye
-    def hesapla_bakiye(tedarikci):
-        if not tedarikci: return 0
-        # Burada sadece kabaca hesaplıyoruz, detaylısı ekstrede
-        borc = sum(t.toplam_fiyat_tl for t in tedarikci.teklifler.filter(durum='onaylandi'))
-        odenen = float(sum(o.tutar for o in tedarikci.odemeler.all()))
-        return borc - odenen
-
-    if model_name == 'teklif':
-        obj = get_object_or_404(Teklif, pk=pk)
-        baslik = "SATIN ALMA / TEKLİF FİŞİ"
-        bakiye = hesapla_bakiye(obj.tedarikci)
-        is_adi = obj.malzeme.isim if obj.malzeme else (obj.is_kalemi.isim if obj.is_kalemi else "Belirtilmemiş")
-
-        belge_data = {
-            'İşlem No': f"TK-{obj.id}",
-            'Tarih': timezone.now(), 
-            'Firma': obj.tedarikci.firma_unvani,
-            'İş Kalemi / Malzeme': is_adi,
-            'Miktar': f"{obj.miktar}",
-            'Birim Fiyat': f"{obj.birim_fiyat:,.2f} {obj.para_birimi}",
-            'Toplam Maliyet': f"{obj.toplam_fiyat_tl:,.2f} TL",
-            'Durum': obj.get_durum_display(),
-            'Güncel Firma Bakiyesi': f"{bakiye:,.2f} TL"
+    if model_name == 'satinalma':
+        obj = get_object_or_404(SatinAlma, pk=pk)
+        context = {
+            'belge': obj, 'model_name': 'satinalma',
+            'baslik': "SATINALMA SİPARİŞ FORMU",
+            'kod': f"SIP-{obj.id:04d}", 'tarih': obj.siparis_tarihi
         }
+        
+    elif model_name == 'hakedis':
+        obj = get_object_or_404(Hakedis, pk=pk)
+        context = {
+            'belge': obj, 'model_name': 'hakedis',
+            'baslik': "HAKEDİŞ RAPORU & ÖDEME EMRİ",
+            'kod': f"HKD-{obj.hakedis_no}", 'tarih': obj.tarih
+        }
+        
     elif model_name == 'odeme':
         obj = get_object_or_404(Odeme, pk=pk)
-        baslik = "TEDARİKÇİ ÖDEME MAKBUZU"
-        bakiye = hesapla_bakiye(obj.tedarikci)
-        detay = f"({obj.get_odeme_turu_display()})"
-        if obj.odeme_turu == 'cek': detay += f" - Vade: {obj.vade_tarihi}"
-        
-        ilgili_is = "Genel / Mahsuben"
-        if obj.bagli_hakedis:
-            ilgili_is = f"Hakediş #{obj.bagli_hakedis.hakedis_no}"
-        elif obj.fatura:
-            ilgili_is = f"Fatura #{obj.fatura.fatura_no}"
-
-        belge_data = {
-            'İşlem No': f"OD-{obj.id}",
-            'Tarih': obj.tarih,
-            'Kime': obj.tedarikci.firma_unvani,
-            'İlgili İş': ilgili_is,
-            'Tutar': f"{obj.tutar:,.2f} {obj.para_birimi}",
-            'Tür': detay,
-            'Açıklama': obj.aciklama,
-            'Kalan Bakiye': f"{bakiye:,.2f} TL"
+        turu = obj.get_odeme_turu_display().upper()
+        context = {
+            'belge': obj, 'model_name': 'odeme',
+            'baslik': f"TEDİYE MAKBUZU ({turu})",
+            'kod': f"ODM-{obj.id:04d}", 'tarih': obj.tarih
         }
+        
+    elif model_name == 'fatura':
+        obj = get_object_or_404(Fatura, pk=pk)
+        context = {
+            'belge': obj, 'model_name': 'fatura',
+            'baslik': "FATURA GİRİŞ FİŞİ",
+            'kod': f"FTR-{obj.fatura_no}", 'tarih': obj.tarih
+        }
+
+    # --- YENİ EKLENENLER ---
+
+    elif model_name == 'depotransfer':
+        obj = get_object_or_404(DepoTransfer, pk=pk)
+        context = {
+            'belge': obj, 'model_name': 'depotransfer',
+            'baslik': "DEPO SEVK / TRANSFER İRSALİYESİ",
+            'kod': f"TRF-{obj.id:04d}", 'tarih': obj.tarih
+        }
+
     elif model_name == 'harcama':
         obj = get_object_or_404(Harcama, pk=pk)
-        baslik = "GİDER / HARCAMA FİŞİ"
-        belge_data = {
-            'İşlem No': f"HR-{obj.id}",
-            'Tarih': obj.tarih,
-            'Kategori': obj.kategori.isim,
-            'Açıklama': obj.aciklama,
-            'Tutar': f"{obj.tutar:,.2f} {obj.para_birimi}",
+        context = {
+            'belge': obj, 'model_name': 'harcama',
+            'baslik': "GİDER / MASRAF MAKBUZU",
+            'kod': f"EXP-{obj.id:04d}", 'tarih': obj.tarih
         }
-    elif model_name == 'malzemetalep':
-        obj = get_object_or_404(MalzemeTalep, pk=pk)
-        baslik = "MALZEME TALEP VE TAKİP FORMU"
-        talep_zamani = obj.tarih.strftime('%d.%m.%Y %H:%M')
+    
+    elif model_name == 'depohareket':
+        obj = get_object_or_404(DepoHareket, pk=pk)
+        tur = obj.get_islem_turu_display().upper()
+        context = {
+            'belge': obj, 'model_name': 'depohareket',
+            'baslik': f"STOK HAREKET FİŞİ ({tur})",
+            'kod': f"STK-{obj.id:04d}", 'tarih': obj.tarih
+        }
+
+    elif model_name == 'tedarikci':
+        # Cari Mutabakat Formu (Snapshot)
+        obj = get_object_or_404(Tedarikci, pk=pk)
         
-        is_adi = "Belirtilmemiş"
-        if obj.malzeme: is_adi = obj.malzeme.isim
-        elif obj.is_kalemi: is_adi = obj.is_kalemi.isim
+        # Basit Bakiye Hesabı (Fatura+Hakediş - Ödeme)
+        t_fat = obj.faturalar.aggregate(t=Sum('genel_toplam'))['t'] or 0
+        t_ode = obj.odemeler.aggregate(t=Sum('tutar'))['t'] or 0
+        
+        # Hakediş toplama (biraz dolaylı)
+        t_hak = 0
+        for teklif in obj.teklifler.all():
+            if hasattr(teklif, 'satinalma_donusumu'):
+                for h in teklif.satinalma_donusumu.hakedisler.filter(onay_durumu=True):
+                    t_hak += (h.brut_tutar + h.kdv_tutari)
+        
+        bakiye = (float(t_fat) + float(t_hak)) - float(t_ode)
 
-        talep_eden = "Bilinmiyor"
-        if obj.talep_eden:
-            talep_eden = f"{obj.talep_eden.first_name} {obj.talep_eden.last_name}"
-
-        belge_data = {
-            'Talep No': f"TLP-{obj.id:04d}",
-            'Talep Oluşturulma': talep_zamani,
-            'Talep Eden': talep_eden,
-            'İstenen Malzeme': is_adi,
-            'Miktar': f"{obj.miktar}",
-            'Kullanılacak Yer': obj.proje_yeri,
-            'Aciliyet': obj.get_oncelik_display(),
-            'Durum': obj.get_durum_display(),
+        context = {
+            'belge': obj, 'model_name': 'tedarikci',
+            'baslik': "CARİ HESAP MUTABAKAT MEKTUBU",
+            'kod': f"MUT-{obj.id:04d}", 'tarih': timezone.now(),
+            'ekstra': {'bakiye': bakiye, 'borc': float(t_fat)+float(t_hak), 'alacak': float(t_ode)}
         }
 
-    context = {'baslik': baslik, 'data': belge_data, 'tarih_saat': timezone.now()}
+    else:
+        return render(request, 'erisim_engellendi.html', {'mesaj': 'Geçersiz belge türü.'})
+
     return render(request, 'belge_yazdir.html', context)
 
 def cikis_yap(request):

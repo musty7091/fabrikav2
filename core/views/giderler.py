@@ -56,9 +56,11 @@ def gider_ekle(request):
     if request.method == "POST":
         form = HarcamaForm(request.POST, request.FILES)
         if form.is_valid():
-            form.save()
-            messages.success(request, "Gider kaydedildi.")
-            return redirect("gider_listesi")
+            gider = form.save()  # Nesneyi değişkene atıyoruz
+            messages.success(request, "✅ Gider kaydedildi.")
+            
+            # DEĞİŞEN KISIM: Yazdırma onayı sayfasına yönlendir
+            return redirect('islem_sonuc', model_name='harcama', pk=gider.id)
     else:
         form = HarcamaForm()
 

@@ -805,6 +805,7 @@ class FaturaKalem(models.Model):
 # 12. ÖDEME
 # ==========================================
 
+
 class Odeme(models.Model):
     ODEME_TURLERI = [
         ('nakit', 'Nakit'),
@@ -814,7 +815,7 @@ class Odeme(models.Model):
 
     tedarikci = models.ForeignKey(Tedarikci, on_delete=models.CASCADE, related_name='odemeler', verbose_name="Ödenen Firma")
     
-    # EKLENEN KRİTİK ALANLAR:
+    # İlgili Hakediş veya Fatura Bağlantısı
     bagli_hakedis = models.ForeignKey('Hakedis', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="İlgili Hakediş")
     fatura = models.ForeignKey('Fatura', on_delete=models.SET_NULL, null=True, blank=True, related_name='odemeler', verbose_name="İlgili Fatura")
 
@@ -828,16 +829,21 @@ class Odeme(models.Model):
     cek_no = models.CharField(max_length=50, blank=True, verbose_name="Çek No / Dekont No")
     vade_tarihi = models.DateField(null=True, blank=True, verbose_name="Çek Vadesi")
 
+    # ✅ YENİ EKLENEN KRİTİK ALAN BURASI:
+    is_cek_odendi = models.BooleanField(default=False, verbose_name="Çek Tahsil Edildi mi?")
+
     aciklama = models.CharField(max_length=200, blank=True, verbose_name="Açıklama")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def save(self, *args, **kwargs):
+        # Çek ise ve vade girilmediyse vade tarihini işlem tarihi yap
         if self.odeme_turu == 'cek' and not self.vade_tarihi:
             self.vade_tarihi = self.tarih
         super(Odeme, self).save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.tedarikci} - {self.tutar} {self.para_birimi} ({self.get_odeme_turu_display()})"
+        durum = " (Ödendi)" if self.is_cek_odendi else ""
+        return f"{self.tedarikci} - {self.tutar} {self.para_birimi} ({self.get_odeme_turu_display()}){durum}"
 
     class Meta:
         verbose_name = "7. Ödeme & Çek Çıkışı"

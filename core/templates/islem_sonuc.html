@@ -1,26 +1,38 @@
 {% extends 'base.html' %}
 
-{% block title %}İşlem Tamamlandı{% endblock %}
+{% block title %}İşlem Başarılı | Fabrika Yönetim{% endblock %}
 
 {% block content %}
-<div class="container d-flex align-items-center justify-content-center" style="min-height: 80vh;">
-    <div class="card shadow text-center p-5" style="max-width: 500px; border-radius: 20px;">
+<div class="container d-flex justify-content-center align-items-center" style="min-height: 80vh;">
+    
+    <div class="card border-0 shadow-lg text-center p-5" style="max-width: 600px; border-radius: 20px;">
         <div class="mb-4">
-            <div style="font-size: 60px;">✅</div>
+            <div style="width: 100px; height: 100px; background: #d1e7dd; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+                <i class="fas fa-check text-success" style="font-size: 50px;"></i>
+            </div>
         </div>
-        <h2 class="mb-3">İşlem Başarıyla Kaydedildi</h2>
-        <p class="text-muted mb-4">
-            Kayıt veritabanına işlendi. Bu işlem için yazılı döküm/çıktı almak ister misiniz?
+
+        <h2 class="fw-bold text-dark mb-3">İşlem Başarıyla Kaydedildi!</h2>
+        <p class="text-muted fs-5 mb-5">
+            İlgili kayıt sisteme işlendi. Bu işlem için bir <strong>belge/fiş çıktısı</strong> almak ister misiniz?
         </p>
 
-        <div class="d-grid gap-3">
-            <a href="{% url 'belge_yazdir' model_name pk %}" target="_blank" class="btn btn-primary btn-lg">
-                🖨️ EVET, FİŞ YAZDIR
+        <div class="d-grid gap-3 d-sm-flex justify-content-center">
+            
+            <a href="{% url return_url %}" class="btn btn-light btn-lg px-5 py-3 shadow-sm border" style="border-radius: 12px; font-weight: 600;">
+                <i class="fas fa-arrow-left me-2 text-secondary"></i> Hayır, Dön
             </a>
-            <a href="/admin/core/{{ model_name }}/" class="btn btn-outline-secondary">
-                Hayır, Listeye Dön
+
+            <a href="{% url 'belge_yazdir' model_name pk %}" target="_blank" class="btn btn-success btn-lg px-5 py-3 shadow-sm" style="border-radius: 12px; font-weight: 600;">
+                <i class="fas fa-print me-2"></i> Evet, Yazdır
             </a>
+            
+        </div>
+        
+        <div class="mt-4">
+            <small class="text-muted fst-italic">"Söz uçar, yazı kalır."</small>
         </div>
     </div>
+
 </div>
 {% endblock %}
