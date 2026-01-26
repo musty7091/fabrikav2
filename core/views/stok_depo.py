@@ -17,6 +17,7 @@ def depo_dashboard(request):
     if not yetki_kontrol(request.user, ['SAHA_EKIBI', 'OFIS_VE_SATINALMA', 'YONETICI']): 
         return redirect('erisim_engellendi')
     
+    base_qs = Malzeme.objects.filter(is_active=True)
     # Uzman Formülü: Giriş - Çıkış - İade (Dashboard için Coalesce ile koruma sağlandı)
     malzemeler = base_qs.annotate(
         giren=Coalesce(Sum('hareketler__miktar', filter=Q(hareketler__islem_turu='giris')), Value(0, output_field=DecimalField())),

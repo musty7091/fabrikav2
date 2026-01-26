@@ -5,6 +5,7 @@ Hedef:
 - Localde: DEBUG=1 ile rahat geliştirme
 - Prod'a geçince: sadece .env değiştir, kod aynı kalsın
 - SECRET_KEY / ALLOWED_HOSTS / CSRF_TRUSTED_ORIGINS env ile yönetilsin
+- Whitenoise ile statik dosya (CSS/JS) desteği
 """
 
 from pathlib import Path
@@ -54,10 +55,10 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "p@f#61x1%i@dm2p@)f1bs11$g2xhbt2w*-y
 DEBUG = env_bool("DJANGO_DEBUG", True)
 
 # Local default: sadece localhost
+# Prod için .env'de güncelleyin: DJANGO_ALLOWED_HOSTS=musty7091.pythonanywhere.com
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
 
 # Ngrok / prod domainleri buraya:
-# DJANGO_CSRF_TRUSTED_ORIGINS=https://*.ngrok-free.app,https://site.com
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 # Localde ngrok kullanıyorsan rahat et diye:
 if DEBUG and not CSRF_TRUSTED_ORIGINS:
@@ -75,6 +76,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "whitenoise.runserver_nostatic", # Whitenoise desteği eklendi
     "django.contrib.staticfiles",
 
     "django.contrib.humanize",
@@ -83,6 +85,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware", # Statik servis için eklendi
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -96,7 +99,6 @@ ROOT_URLCONF = "fabrika.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        # Senin mevcut yapın: core/templates içinden yükle
         "DIRS": [os.path.join(BASE_DIR, "core", "templates")],
         "APP_DIRS": True,
         "OPTIONS": {
@@ -115,8 +117,6 @@ WSGI_APPLICATION = "fabrika.wsgi.application"
 
 # ------------------------------------------------------------
 # Database (v2: db_v2.sqlite3)
-# İstersen .env ile değiştirebilirsin:
-# DJANGO_DB_PATH=C:\fabrikav2\db_v2.sqlite3
 # ------------------------------------------------------------
 db_path = os.getenv("DJANGO_DB_PATH", str(BASE_DIR / "db_v2.sqlite3"))
 
@@ -164,8 +164,12 @@ STATICFILES_DIRS = [
     os.path.join(BASE_DIR, "static"),
 ]
 
-# Prod için topla (collectstatic) klasörü (istersen)
-STATIC_ROOT = os.getenv("DJANGO_STATIC_ROOT", "") or None
+# Prod için topla (collectstatic) klasörü
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+# Prod'da dosyaları sıkıştırıp cachelemek için (DEBUG False iken aktif)
+if not DEBUG:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 
 # ------------------------------------------------------------
@@ -203,6 +207,13 @@ JAZZMIN_SETTINGS = {
         "core.Tedarikci": "fas fa-handshake",
         "core.IsKalemi": "fas fa-tasks",
         "core.Teklif": "fas fa-file-invoice-dollar",
+        "core.SatinAlma": "fas fa-shopping-cart",
+        "core.Hakedis": "fas fa-calculator",
+        "core.Fatura": "fas fa-file-invoice",
+        "core.Odeme": "fas fa-money-bill-wave",
+        "core.Malzeme": "fas fa-box",
+        "core.Depo": "fas fa-warehouse",
+        "core.DepoHareket": "fas fa-exchange-alt",
     },
 }
 
@@ -231,10 +242,6 @@ SESSION_SAVE_EVERY_REQUEST = env_bool("DJANGO_SESSION_SAVE_EVERY_REQUEST", True)
 # ------------------------------------------------------------
 # Security hardening (prod'da devreye girecek şekilde)
 # ------------------------------------------------------------
-# Prod'da .env ile aç:
-# DJANGO_SECURE_SSL_REDIRECT=1
-# DJANGO_SESSION_COOKIE_SECURE=1
-# DJANGO_CSRF_COOKIE_SECURE=1
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", False)
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", False)
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", False)
